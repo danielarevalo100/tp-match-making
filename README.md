@@ -60,7 +60,8 @@ Ports are configurable in `.env`. Applications running in Compose must use the i
 |-- infra/
 |   |-- cassandra/init.cql
 |   |-- mongo/init.js
-|   `-- neo4j/init.cypher
+|   |-- neo4j/init.cypher
+|   `-- redis/README.md
 |-- scripts/
 |   |-- initialize-infrastructure.ps1
 |   `-- initialize-infrastructure.sh

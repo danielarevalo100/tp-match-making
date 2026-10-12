@@ -58,7 +58,7 @@ Use values from the local `.env`, rather than copying the example passwords into
 
 ## Initialization behavior
 
-- Redis has no schema initialization.
+- Redis has no schema initialization. Its persistence and verification notes are documented in `infra/redis/README.md`.
 - MongoDB executes `infra/mongo/init.js` only when a fresh database volume is initialized.
 - Cassandra mounts `infra/cassandra/init.cql` at `/opt/gaming/init.cql` for explicit execution after Cassandra is healthy.
 - Neo4j mounts `infra/neo4j/init.cypher` at `/opt/gaming/init.cypher` for explicit execution after Neo4j is healthy.
