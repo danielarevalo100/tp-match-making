@@ -16,3 +16,7 @@ Avoid creating empty services solely to mirror a preliminary architecture diagra
 ## Starting a new Node.js service
 
 Copy [`template-service`](template-service/) and follow its README. The template is intentionally database-neutral so each new service adds only the clients and connection variables it needs.
+
+## Implemented services
+
+- [`players-service`](players-service/) — player registration, profile queries and account lifecycle management backed by MongoDB.

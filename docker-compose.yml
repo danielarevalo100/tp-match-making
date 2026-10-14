@@ -97,6 +97,27 @@ services:
     networks:
       - gaming-network
 
+  players-service:
+    build:
+      context: ./services/players-service
+    container_name: gaming-players-service
+    environment:
+      SERVICE_NAME: players-service
+      PORT: 3000
+      NODE_ENV: production
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-gaming_admin}:${MONGO_ROOT_PASSWORD:-change_me_local_only}@mongodb:27017/gaming?authSource=admin
+      MONGODB_DB_NAME: gaming
+      MONGODB_CONNECT_RETRIES: 15
+      MONGODB_RETRY_DELAY_MS: 2000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "${PLAYERS_SERVICE_PORT:-3001}:3000"
+    restart: unless-stopped
+    networks:
+      - gaming-network
+
 networks:
   gaming-network:
     name: gaming-network

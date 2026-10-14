@@ -237,15 +237,16 @@ upsertCatalog("seasons", [
 
 ensureCollection("players", {
   bsonType: "object",
-  required: ["_id", "username", "email", "passwordHash", "registeredAt", "country", "region", "level", "accountStatus", "ratings"],
+  required: ["_id", "username", "email", "passwordHash", "registeredAt", "updatedAt", "country", "region", "level", "accountStatus", "ratings"],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Shared player id (UUID)" },
-    username: { bsonType: "string", minLength: 3, maxLength: 32 },
-    email: { bsonType: "string", pattern: "^[^@\\s]+@[^@\\s]+$" },
+    username: { bsonType: "string", minLength: 3, maxLength: 32, pattern: "^[^A-Z]+$" },
+    email: { bsonType: "string", pattern: "^[^@\\sA-Z]+@[^@\\sA-Z]+$" },
     passwordHash: { bsonType: "string" },
     birthDate: { bsonType: "date" },
     registeredAt: { bsonType: "date" },
+    updatedAt: { bsonType: "date" },
     country: { bsonType: "string", pattern: "^[A-Z]{2}$" },
     region: { bsonType: "string", description: "regions._id derived from country" },
     level: { bsonType: INTEGER, minimum: 1 },
@@ -272,6 +273,22 @@ gamingDb.players.createIndex({ username: 1 }, { unique: true });
 gamingDb.players.createIndex({ email: 1 }, { unique: true });
 gamingDb.players.createIndex({ region: 1, registeredAt: 1 });
 gamingDb.players.createIndex({ country: 1 });
+
+// Version 3 migration: normalize existing identifiers and backfill updatedAt.
+// A case-insensitive collision intentionally fails against the unique indexes
+// and must be resolved explicitly instead of silently merging accounts.
+gamingDb.players.updateMany(
+  {},
+  [
+    {
+      $set: {
+        username: { $toLower: "$username" },
+        email: { $toLower: "$email" },
+        updatedAt: { $ifNull: ["$updatedAt", "$registeredAt"] },
+      },
+    },
+  ],
+);
 
 // ---------------------------------------------------------------------------
 // administrators
@@ -366,6 +383,16 @@ gamingDb.schema_metadata.updateOne(
   {
     $setOnInsert: {
       description: "Players, catalogs (regions, game modes, seasons), administrators, reports and sanctions",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 3 },
+  {
+    $setOnInsert: {
+      description: "Normalize player identifiers and track profile updates",
       appliedAt: new Date(),
     },
   },

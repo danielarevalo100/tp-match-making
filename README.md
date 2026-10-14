@@ -15,7 +15,7 @@ Create the local environment file:
 Copy-Item .env.example .env
 ```
 
-On macOS or Linux, use `cp .env.example .env` instead. Change the local passwords in `.env`, then start the four persistence engines:
+On macOS or Linux, use `cp .env.example .env` instead. Change the local passwords in `.env`, then start the persistence engines and application services:
 
 ```bash
 docker compose up -d
@@ -47,6 +47,7 @@ Do not add `-v` unless you intentionally want to delete all local database data.
 | Cassandra | `9042` | `cassandra:9042` | High-volume events and history |
 | Neo4j HTTP | `7474` | `neo4j:7474` | Browser UI |
 | Neo4j Bolt | `7687` | `neo4j:7687` | Player relationship queries |
+| Players API | `3001` | `players-service:3000` | Player registration and profile management |
 
 Ports are configurable in `.env`. Applications running in Compose must use the internal service names, while tools running directly on the host use `localhost`.
 
@@ -67,6 +68,7 @@ Ports are configurable in `.env`. Applications running in Compose must use the i
 |   `-- initialize-infrastructure.sh
 `-- services/
     |-- README.md
+    |-- players-service/
     `-- template-service/
 ```
 
@@ -77,3 +79,5 @@ See [the infrastructure guide](docs/infrastructure.md) for health checks, connec
 ## Create an application service
 
 Use [`services/template-service`](services/template-service/) as the starting point for Node.js and TypeScript REST APIs. Its README covers copying, renaming, local development, validation, Docker builds, and Compose integration.
+
+The first concrete service is [`services/players-service`](services/players-service/), available at `http://localhost:3001` when the full Compose stack is running.
