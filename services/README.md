@@ -20,3 +20,4 @@ Copy [`template-service`](template-service/) and follow its README. The template
 ## Implemented services
 
 - [`players-service`](players-service/) — player registration, profile queries and account lifecycle management backed by MongoDB.
+- [`matchmaking-service`](matchmaking-service/) — matchmaking queue entry (problem 1): validates against MongoDB and keeps the live queues in Redis.

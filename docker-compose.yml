@@ -118,6 +118,32 @@ services:
     networks:
       - gaming-network
 
+  matchmaking-service:
+    build:
+      context: ./services/matchmaking-service
+    container_name: gaming-matchmaking-service
+    environment:
+      SERVICE_NAME: matchmaking-service
+      PORT: 3000
+      NODE_ENV: production
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-gaming_admin}:${MONGO_ROOT_PASSWORD:-change_me_local_only}@mongodb:27017/gaming?authSource=admin
+      MONGODB_DB_NAME: gaming
+      MONGODB_CONNECT_RETRIES: 15
+      MONGODB_RETRY_DELAY_MS: 2000
+      REDIS_URL: redis://redis:6379
+      REDIS_CONNECT_RETRIES: 15
+      REDIS_RETRY_DELAY_MS: 2000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${MATCHMAKING_SERVICE_PORT:-3002}:3000"
+    restart: unless-stopped
+    networks:
+      - gaming-network
+
 networks:
   gaming-network:
     name: gaming-network
