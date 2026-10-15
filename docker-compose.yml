@@ -97,12 +97,12 @@ services:
     networks:
       - gaming-network
 
-  players-service:
+  gaming-app:
     build:
-      context: ./services/players-service
-    container_name: gaming-players-service
+      context: ./gamingApp
+    container_name: gaming-app
     environment:
-      SERVICE_NAME: players-service
+      SERVICE_NAME: gaming-app
       PORT: 3000
       NODE_ENV: production
       MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-gaming_admin}:${MONGO_ROOT_PASSWORD:-change_me_local_only}@mongodb:27017/gaming?authSource=admin
@@ -113,7 +113,7 @@ services:
       mongodb:
         condition: service_healthy
     ports:
-      - "${PLAYERS_SERVICE_PORT:-3001}:3000"
+      - "${GAMING_APP_PORT:-3001}:3000"
     restart: unless-stopped
     networks:
       - gaming-network

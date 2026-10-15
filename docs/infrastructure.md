@@ -67,9 +67,9 @@ The cross-platform scripts under `scripts/` apply all three definitions. They cu
 
 ## Application services
 
-Application code belongs under `services/`. Each service should have a defined business responsibility, a Dockerfile, environment-based configuration, retry logic for its dependencies, tests, and an API health endpoint where applicable.
+Application code lives in `gamingApp`, a single Node.js and TypeScript service with a Dockerfile, environment-based configuration, retry logic for its dependencies, tests, and health endpoints.
 
-Do not create one microservice per entity. Service boundaries and implementation language remain open decisions.
+Business processes are modules inside that service, not separate microservices. Do not create one module per entity.
 
 ## Acceptance checks
 
@@ -83,6 +83,5 @@ Do not create one microservice per entity. Service boundaries and implementation
 ## Pending decisions
 
 - Pin exact image patch versions after testing on the team's machines.
-- Select the language and framework for application services.
 - Define access patterns, schema ownership, and final service boundaries.
 - Add idempotent schema and test-data commands for the required minimum dataset.
