@@ -109,8 +109,13 @@ services:
       MONGODB_DB_NAME: gaming
       MONGODB_CONNECT_RETRIES: 15
       MONGODB_RETRY_DELAY_MS: 2000
+      REDIS_URL: redis://redis:6379
+      REDIS_CONNECT_RETRIES: 15
+      REDIS_RETRY_DELAY_MS: 2000
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "${GAMING_APP_PORT:-3001}:3000"

@@ -3,6 +3,16 @@ import { ZodError } from "zod";
 
 import { InjectedFailureError, StorageError } from "../shared/errors.js";
 import {
+  AccountNotActiveError,
+  AlreadyInMatchError,
+  AlreadyInQueueError,
+  ModeNotAvailableError,
+  PlayerNotFoundError as QueuePlayerNotFoundError,
+  PlayerSanctionedError,
+  RegionNotFoundError as QueueRegionNotFoundError,
+  TicketNotFoundError,
+} from "./modules/matchmaking/business/models/matchmakingErrors.js";
+import {
   PlayerConflictError,
   PlayerNotFoundError,
   RegionNotFoundError,
@@ -20,8 +30,13 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     return;
   }
 
-  if (error instanceof PlayerNotFoundError) {
+  if (error instanceof PlayerNotFoundError || error instanceof QueuePlayerNotFoundError) {
     response.status(404).json({ error: "PLAYER_NOT_FOUND", message: error.message });
+    return;
+  }
+
+  if (error instanceof TicketNotFoundError) {
+    response.status(404).json({ error: "TICKET_NOT_FOUND", message: error.message });
     return;
   }
 
@@ -34,8 +49,51 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     return;
   }
 
-  if (error instanceof RegionNotFoundError) {
+  if (error instanceof RegionNotFoundError || error instanceof QueueRegionNotFoundError) {
     response.status(422).json({ error: "REGION_NOT_FOUND", message: error.message });
+    return;
+  }
+
+  if (error instanceof AccountNotActiveError) {
+    response.status(422).json({
+      error: "ACCOUNT_NOT_ACTIVE",
+      accountStatus: error.accountStatus,
+      message: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof ModeNotAvailableError) {
+    response.status(422).json({ error: "MODE_NOT_AVAILABLE", message: error.message });
+    return;
+  }
+
+  if (error instanceof PlayerSanctionedError) {
+    response.status(403).json({
+      error: "PLAYER_SANCTIONED",
+      endsAt: error.endsAt,
+      message: error.message,
+      sanctionId: error.sanctionId,
+      sanctionType: error.sanctionType,
+    });
+    return;
+  }
+
+  if (error instanceof AlreadyInQueueError) {
+    response.status(409).json({
+      error: "ALREADY_IN_QUEUE",
+      message: error.message,
+      ticket: error.ticket,
+    });
+    return;
+  }
+
+  if (error instanceof AlreadyInMatchError) {
+    response.status(409).json({
+      error: "ALREADY_IN_MATCH",
+      matchId: error.matchId,
+      message: error.message,
+    });
     return;
   }
 

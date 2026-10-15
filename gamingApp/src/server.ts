@@ -2,6 +2,7 @@ import { createApp } from "./api/app.js";
 import { createContainer } from "./composition/createContainer.js";
 import { loadConfig } from "./config.js";
 import { connectToMongo } from "./infrastructure/mongo/mongoConnection.js";
+import { connectToRedis } from "./infrastructure/redis/redisConnection.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -12,11 +13,18 @@ async function main(): Promise<void> {
     delayMs: config.mongoRetryDelayMs,
     uri: config.mongoUri,
   });
-  const container = createContainer({ mongo });
+  const redis = await connectToRedis({
+    attempts: config.redisConnectRetries,
+    delayMs: config.redisRetryDelayMs,
+    url: config.redisUrl,
+  });
+  redis.on("error", (error: Error) => console.error("Redis error", error.message));
+
+  const container = createContainer({ mongo, redis });
   const app = createApp({
     checkReadiness: async () => {
       await mongo.database.command({ ping: 1 });
-      return true;
+      return (await redis.ping()) === "PONG";
     },
     routes: container.routes,
     serviceName: config.serviceName,
@@ -39,8 +47,7 @@ async function main(): Promise<void> {
     forceExitTimer.unref();
 
     server.close((serverError) => {
-      void mongo.client
-        .close()
+      void Promise.all([mongo.client.close(), redis.quit()])
         .then(() => {
           clearTimeout(forceExitTimer);
           if (serverError) {
@@ -50,7 +57,7 @@ async function main(): Promise<void> {
           process.exit(0);
         })
         .catch((closeError: unknown) => {
-          console.error("Failed to close MongoDB connection", closeError);
+          console.error("Failed to close database connections", closeError);
           process.exit(1);
         });
     });
