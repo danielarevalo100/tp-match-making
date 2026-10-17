@@ -59,3 +59,10 @@ export class TicketNotFoundError extends Error {
     this.name = "TicketNotFoundError";
   }
 }
+
+export class FormationContendedError extends Error {
+  constructor(mode: string, region: string) {
+    super(`Could not reserve a group in ${mode}/${region}: players kept leaving the queue.`);
+    this.name = "FormationContendedError";
+  }
+}

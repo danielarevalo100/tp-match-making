@@ -6,6 +6,7 @@ import {
   AccountNotActiveError,
   AlreadyInMatchError,
   AlreadyInQueueError,
+  FormationContendedError,
   ModeNotAvailableError,
   PlayerNotFoundError as QueuePlayerNotFoundError,
   PlayerSanctionedError,
@@ -94,6 +95,11 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
       matchId: error.matchId,
       message: error.message,
     });
+    return;
+  }
+
+  if (error instanceof FormationContendedError) {
+    response.status(409).json({ error: "FORMATION_CONTENDED", message: error.message });
     return;
   }
 

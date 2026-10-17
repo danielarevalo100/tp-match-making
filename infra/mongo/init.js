@@ -370,6 +370,43 @@ gamingDb.sanctions.createIndex({ playerId: 1, createdAt: -1 });
 gamingDb.sanctions.createIndex({ reportId: 1 }, { sparse: true });
 
 // ---------------------------------------------------------------------------
+// matches (problem 2)
+// Durable record of a match created by the formation saga. `_id` is the shared
+// matchId (also the Redis key suffix and the Cassandra partition later), so
+// retrying the creation never duplicates it. Problem 4 closes it.
+// ---------------------------------------------------------------------------
+
+ensureCollection("matches", {
+  bsonType: "object",
+  required: ["_id", "mode", "region", "status", "players", "ratingRange", "createdAt"],
+  additionalProperties: true,
+  properties: {
+    _id: { bsonType: "string", description: "Shared match id (UUID)" },
+    mode: { bsonType: "string" },
+    region: { bsonType: "string" },
+    status: { enum: ["in_progress", "closed", "voided"] },
+    ratingRange: { bsonType: NUMBER },
+    createdAt: { bsonType: "date" },
+    players: {
+      bsonType: "array",
+      minItems: 2,
+      items: {
+        bsonType: "object",
+        required: ["playerId", "mmr", "enqueuedAt"],
+        properties: {
+          playerId: { bsonType: "string" },
+          mmr: { bsonType: NUMBER },
+          enqueuedAt: { bsonType: NUMBER },
+        },
+      },
+    },
+  },
+});
+
+gamingDb.matches.createIndex({ status: 1, createdAt: 1 });
+gamingDb.matches.createIndex({ "players.playerId": 1, createdAt: -1 });
+
+// ---------------------------------------------------------------------------
 // Schema versions
 // ---------------------------------------------------------------------------
 
@@ -393,6 +430,16 @@ gamingDb.schema_metadata.updateOne(
   {
     $setOnInsert: {
       description: "Normalize player identifiers and track profile updates",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 4 },
+  {
+    $setOnInsert: {
+      description: "Matches created by the matchmaking formation saga",
       appliedAt: new Date(),
     },
   },

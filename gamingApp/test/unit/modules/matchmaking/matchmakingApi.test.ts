@@ -208,7 +208,8 @@ describe("matchmaking queue API", () => {
       status: "active" as const,
       type: "permanent_ban",
     };
-    const sanctionCheck = () => request(context.app).post(`/matchmaking/queue/${playerId}/sanction-check`);
+    const sanctionCheck = () =>
+      request(context.app).post(`/matchmaking/queue/${playerId}/sanction-check`);
 
     it("evicts a queued player and reports the sanction", async () => {
       await enqueue();

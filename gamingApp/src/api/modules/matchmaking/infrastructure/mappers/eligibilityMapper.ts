@@ -1,3 +1,4 @@
+import type { FormationMode } from "../../business/models/matchFormation.js";
 import type {
   EligiblePlayer,
   QueueMode,
@@ -15,6 +16,14 @@ export type GameModeDocument = {
   _id: string;
   active: boolean;
   initialRating?: number;
+  matchmaking: {
+    expandEverySeconds: number;
+    initialRatingRange: number;
+    maxRatingRange: number;
+    ratingRangeStep: number;
+  };
+  maxPlayers: number;
+  minPlayers: number;
 };
 
 export type RegionDocument = {
@@ -42,6 +51,18 @@ export function toEligiblePlayer(document: EligiblePlayerDocument): EligiblePlay
 
 export function toQueueMode(document: GameModeDocument): QueueMode {
   return { id: document._id, initialRating: document.initialRating ?? 1_000 };
+}
+
+export function toFormationMode(document: GameModeDocument): FormationMode {
+  return {
+    expandEverySeconds: Number(document.matchmaking.expandEverySeconds),
+    id: document._id,
+    initialRatingRange: Number(document.matchmaking.initialRatingRange),
+    maxPlayers: Number(document.maxPlayers),
+    maxRatingRange: Number(document.matchmaking.maxRatingRange),
+    minPlayers: Number(document.minPlayers),
+    ratingRangeStep: Number(document.matchmaking.ratingRangeStep),
+  };
 }
 
 export function toSanctionInForce(document: SanctionDocument): SanctionInForce {

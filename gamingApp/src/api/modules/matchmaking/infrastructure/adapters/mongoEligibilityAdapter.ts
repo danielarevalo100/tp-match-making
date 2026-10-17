@@ -2,6 +2,7 @@ import type { Collection, Db } from "mongodb";
 
 import { BaseMongoAdapter } from "../../../../../infrastructure/mongo/baseMongoAdapter.js";
 import { mongoCollections } from "../../../../../shared/storageKeys.js";
+import type { FormationMode } from "../../business/models/matchFormation.js";
 import type {
   EligiblePlayer,
   QueueMode,
@@ -10,6 +11,7 @@ import type {
 import type { EligibilityRepositoryPort } from "../../business/ports/matchmakingPorts.js";
 import {
   toEligiblePlayer,
+  toFormationMode,
   toQueueMode,
   toSanctionInForce,
   type EligiblePlayerDocument,
@@ -46,6 +48,13 @@ export class MongoEligibilityAdapter extends BaseMongoAdapter implements Eligibi
     return this.run("matchmaking.findActiveMode", async () => {
       const mode = await this.gameModes.findOne({ _id: modeId, active: true });
       return mode ? toQueueMode(mode) : null;
+    });
+  }
+
+  findFormationMode(modeId: string): Promise<FormationMode | null> {
+    return this.run("matchmaking.findFormationMode", async () => {
+      const mode = await this.gameModes.findOne({ _id: modeId, active: true });
+      return mode ? toFormationMode(mode) : null;
     });
   }
 

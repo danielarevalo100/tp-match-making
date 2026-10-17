@@ -1,5 +1,6 @@
 export const mongoCollections = {
   gameModes: "game_modes",
+  matches: "matches",
   players: "players",
   regions: "regions",
   sanctions: "sanctions",
@@ -7,6 +8,9 @@ export const mongoCollections = {
 
 export const redisKeys = {
   activeMatch: (playerId: string): string => `player:${playerId}:active_match`,
+  formation: (matchId: string): string => `mm:formation:${matchId}`,
+  formationIndex: "mm:formations",
+  match: (matchId: string): string => `match:${matchId}`,
   ratingQueue: (mode: string, region: string): string => `mm:q:${mode}:${region}:rating`,
   ticket: (playerId: string): string => `mm:ticket:${playerId}`,
   waitQueue: (mode: string, region: string): string => `mm:q:${mode}:${region}:wait`,
