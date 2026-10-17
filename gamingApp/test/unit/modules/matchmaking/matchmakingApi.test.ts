@@ -199,6 +199,55 @@ describe("matchmaking queue API", () => {
     });
   });
 
+  describe("sanction applied while queued", () => {
+    const sanction = {
+      endsAt: null,
+      id: "sanction-1",
+      playerId,
+      startsAt: new Date("2026-10-01T00:00:00.000Z"),
+      status: "active" as const,
+      type: "permanent_ban",
+    };
+    const sanctionCheck = () => request(context.app).post(`/matchmaking/queue/${playerId}/sanction-check`);
+
+    it("evicts a queued player and reports the sanction", async () => {
+      await enqueue();
+      context.eligibility.sanctions.push(sanction);
+
+      const response = await sanctionCheck();
+      const body = response.body as { evicted: boolean; sanctioned: boolean };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.evicted, true);
+      assert.equal(body.sanctioned, true);
+      assert.equal(context.queue.tickets.size, 0);
+    });
+
+    it("keeps a queued player without sanction", async () => {
+      await enqueue();
+
+      const response = await sanctionCheck();
+
+      assert.deepEqual(response.body, { evicted: false, sanctioned: false });
+      assert.equal(context.queue.tickets.size, 1);
+    });
+
+    it("removes the ticket if a sanction lands during enqueue", async () => {
+      const original = context.eligibility.findSanctionInForce.bind(context.eligibility);
+      let calls = 0;
+      context.eligibility.findSanctionInForce = async (id, at) => {
+        calls++;
+        if (calls === 2) context.eligibility.sanctions.push(sanction);
+        return original(id, at);
+      };
+
+      const response = await enqueue();
+
+      assert.equal(response.status, 403);
+      assert.equal(context.queue.tickets.size, 0);
+    });
+  });
+
   it("validates the request body", async () => {
     const response = await request(context.app)
       .post("/matchmaking/queue")

@@ -22,4 +22,9 @@ export class MatchmakingController {
     await this.matchmakingService.leave(playerId);
     response.status(204).end();
   };
+
+  readonly evictIfSanctioned = async (request: Request, response: Response): Promise<void> => {
+    const { playerId } = playerIdParamSchema.parse(request.params);
+    response.json(await this.matchmakingService.evictIfSanctioned(playerId));
+  };
 }

@@ -8,6 +8,7 @@ export function createMatchmakingRouter(controller: MatchmakingController): Rout
   router.post("/queue", controller.enqueue);
   router.get("/queue/:playerId", controller.getTicket);
   router.delete("/queue/:playerId", controller.leave);
+  router.post("/queue/:playerId/sanction-check", controller.evictIfSanctioned);
 
   return router;
 }

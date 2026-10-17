@@ -10,7 +10,7 @@ import {
   RegionNotFoundError,
   TicketNotFoundError,
 } from "../models/matchmakingErrors.js";
-import type { EnqueueResult, QueueTicket } from "../models/queueTicket.js";
+import type { EnqueueResult, EvictionResult, QueueTicket } from "../models/queueTicket.js";
 import type { EligibilityRepositoryPort, MatchmakingQueuePort } from "../ports/matchmakingPorts.js";
 
 export type EnqueuePlayerInput = {
@@ -52,14 +52,30 @@ export class MatchmakingService {
 
     switch (outcome.status) {
       case "enqueued":
-        return { created: true, ticket: outcome.ticket };
       case "replayed":
-        return { created: false, ticket: outcome.ticket };
+        // A sanction may have been applied between the check above and the
+        // Redis write; re-check now that the ticket is visible in the queue.
+        await this.assertNotSanctionedOrLeave(player.id);
+        return { created: outcome.status === "enqueued", ticket: outcome.ticket };
       case "already_in_queue":
         throw new AlreadyInQueueError(outcome.ticket);
       case "already_in_match":
         throw new AlreadyInMatchError(outcome.matchId);
     }
+  }
+
+  private async assertNotSanctionedOrLeave(playerId: string): Promise<void> {
+    const sanction = await this.eligibility.findSanctionInForce(playerId, new Date());
+    if (!sanction) return;
+    await this.queue.leave(playerId);
+    throw new PlayerSanctionedError(sanction.id, sanction.type, sanction.endsAt);
+  }
+
+  async evictIfSanctioned(playerId: string): Promise<EvictionResult> {
+    const sanction = await this.eligibility.findSanctionInForce(playerId, new Date());
+    if (!sanction) return { evicted: false, sanctioned: false };
+    const evicted = await this.queue.leave(playerId);
+    return { evicted, sanction, sanctioned: true };
   }
 
   async getTicket(playerId: string): Promise<QueueTicket> {

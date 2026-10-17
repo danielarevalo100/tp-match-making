@@ -35,3 +35,9 @@ export type SanctionInForce = {
   id: string;
   type: string;
 };
+
+export type EvictionResult = {
+  evicted: boolean;
+  sanction?: SanctionInForce;
+  sanctioned: boolean;
+};

@@ -52,13 +52,22 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
 
   leave(playerId: string): Promise<boolean> {
     return this.run("matchmaking.leave", async () => {
-      const removed = (await this.redis.eval(
-        leaveScript,
-        1,
-        redisKeys.ticket(playerId),
-        playerId,
-      )) as number;
-      return removed === 1;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const ticket = toQueueTicket(await this.redis.hgetall(redisKeys.ticket(playerId)));
+        if (!ticket) return false;
+
+        const removed = (await this.redis.eval(
+          leaveScript,
+          3,
+          redisKeys.ticket(playerId),
+          redisKeys.ratingQueue(ticket.mode, ticket.region),
+          redisKeys.waitQueue(ticket.mode, ticket.region),
+          playerId,
+          ticket.ticketId,
+        )) as number;
+        if (removed === 1) return true;
+      }
+      return false;
     });
   }
 }

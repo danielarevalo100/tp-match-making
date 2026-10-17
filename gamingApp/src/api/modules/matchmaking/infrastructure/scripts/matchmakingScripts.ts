@@ -26,14 +26,16 @@ redis.call('ZADD', KEYS[4], ARGV[6], ARGV[1])
 return {'ENQUEUED'}
 `;
 
+// KEYS: ticket, rating queue, wait queue. ARGV: playerId, ticketId.
+// The queue keys depend on the ticket's mode and region, so the caller reads the
+// ticket first; the ticketId check makes the removal a no-op if the ticket was
+// replaced in between (the caller then retries with the fresh one).
 export const leaveScript = `
-local mode = redis.call('HGET', KEYS[1], 'mode')
-if not mode then
+if redis.call('HGET', KEYS[1], 'ticketId') ~= ARGV[2] then
   return 0
 end
-local region = redis.call('HGET', KEYS[1], 'region')
-redis.call('ZREM', 'mm:q:' .. mode .. ':' .. region .. ':rating', ARGV[1])
-redis.call('ZREM', 'mm:q:' .. mode .. ':' .. region .. ':wait', ARGV[1])
+redis.call('ZREM', KEYS[2], ARGV[1])
+redis.call('ZREM', KEYS[3], ARGV[1])
 redis.call('DEL', KEYS[1])
 return 1
 `;
