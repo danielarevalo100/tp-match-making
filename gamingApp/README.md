@@ -18,6 +18,9 @@ src/
 |   `-- storageKeys.ts
 |-- infrastructure/
 |   |-- baseAdapter.ts
+|   |-- cassandra/
+|   |   |-- cassandraConnection.ts
+|   |   `-- baseCassandraAdapter.ts
 |   |-- mongo/
 |   |   |-- mongoConnection.ts
 |   |   `-- baseMongoAdapter.ts
@@ -124,19 +127,32 @@ Key conventions are documented in [`infra/redis/README.md`](../infra/redis/READM
 
 Fault injection steps: `matchmaking.findPlayer`, `matchmaking.findActiveMode`, `matchmaking.isActiveRegion`, `matchmaking.findSanctionInForce`, `matchmaking.enqueue`, `matchmaking.findTicket`, `matchmaking.leave`.
 
+### matchEvents
+
+In-match events and live scoreboard (problem 3). Events are appended to Cassandra (`events_by_match`) and applied to a scoreboard in Redis; both are written for every event, log first. See [`docs/problema3.md`](../docs/problema3.md).
+
+| Method | Path                                       | Purpose                                              |
+| ------ | ------------------------------------------ | ---------------------------------------------------- |
+| `POST` | `/matches/:matchId/events`                 | Record an event (idempotent by `eventId`)            |
+| `GET`  | `/matches/:matchId/events`                 | Read the log in time order (`fromTsMs`, `toTsMs`, `limit`, `pageState`) |
+| `GET`  | `/matches/:matchId/scoreboard`             | Live scoreboard                                      |
+| `POST` | `/matches/:matchId/scoreboard/reconcile`   | Apply to the scoreboard any logged event it is missing |
+
+Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `matchEvents.applyScoreboard`, `matchEvents.listEvents`, `matchEvents.findScoreboard`.
+
 ## Shared endpoints
 
 | Method | Path      | Purpose                     |
 | ------ | --------- | --------------------------- |
 | `GET`  | `/health` | Process liveness            |
-| `GET`  | `/ready`  | MongoDB and Redis readiness |
+| `GET`  | `/ready`  | MongoDB, Cassandra and Redis readiness |
 
 ## Local development
 
-From the repository root, copy `.env.example` to `.env` and ensure the MongoDB and Redis containers and the schema are running:
+From the repository root, copy `.env.example` to `.env` and ensure the MongoDB, Redis and Cassandra containers and the schema are running (Cassandra takes about a minute to become healthy, and the app needs its keyspace, so apply the schema before starting the app):
 
 ```bash
-docker compose up -d mongodb redis
+docker compose up -d mongodb redis cassandra
 ./scripts/initialize-infrastructure.sh
 ```
 
@@ -165,10 +181,10 @@ pnpm test
 pnpm build
 ```
 
-The Redis integration tests in `test/integration` are skipped unless `REDIS_URL` is set. They use throwaway keys and clean up after themselves:
+The integration tests in `test/integration` are skipped unless `REDIS_URL` is set (the match events ones also need `CASSANDRA_CONTACT_POINTS`). They use throwaway keys and rows and clean up after themselves:
 
 ```bash
-REDIS_URL=redis://127.0.0.1:6379 pnpm test
+REDIS_URL=redis://127.0.0.1:6379 CASSANDRA_CONTACT_POINTS=127.0.0.1 pnpm test
 ```
 
 `pnpm lint:fix` and `pnpm format` apply automatic fixes. ESLint uses `typescript-eslint` with type-checked rules and `eslint-config-prettier`, so formatting is left to Prettier.
@@ -178,6 +194,8 @@ REDIS_URL=redis://127.0.0.1:6379 pnpm test
 `scripts/demo-problem-1.sh` (or `.ps1`) at the repository root registers a throwaway player and walks through problem 1: success, idempotent retry, second queue, active match, sanction and a concurrent burst. It needs the Compose stack running.
 
 If player registration fails with "Document failed validation", the MongoDB volume was created with an older schema: reapply it with `scripts/initialize-infrastructure.sh` (or `.ps1`).
+
+`scripts/demo-problem-3.mjs` simulates 100 simultaneous matches (`node scripts/demo-problem-3.mjs`), checks the scoreboards and the Cassandra log, and provokes the failure scenarios. See `docs/problema3.md`.
 
 ## Example registration
 

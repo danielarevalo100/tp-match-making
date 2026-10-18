@@ -1,6 +1,7 @@
 import { createApp } from "./api/app.js";
 import { createContainer } from "./composition/createContainer.js";
 import { loadConfig } from "./config.js";
+import { connectToCassandra } from "./infrastructure/cassandra/cassandraConnection.js";
 import { connectToMongo } from "./infrastructure/mongo/mongoConnection.js";
 import { connectToRedis } from "./infrastructure/redis/redisConnection.js";
 
@@ -19,11 +20,20 @@ async function main(): Promise<void> {
     url: config.redisUrl,
   });
   redis.on("error", (error: Error) => console.error("Redis error", error.message));
+  const cassandra = await connectToCassandra({
+    attempts: config.cassandraConnectRetries,
+    contactPoints: config.cassandraContactPoints,
+    delayMs: config.cassandraRetryDelayMs,
+    keyspace: config.cassandraKeyspace,
+    localDataCenter: config.cassandraLocalDataCenter,
+    port: config.cassandraPort,
+  });
 
-  const container = createContainer({ mongo, redis });
+  const container = createContainer({ cassandra, mongo, redis });
   const app = createApp({
     checkReadiness: async () => {
       await mongo.database.command({ ping: 1 });
+      await cassandra.execute("SELECT release_version FROM system.local");
       return (await redis.ping()) === "PONG";
     },
     routes: container.routes,
@@ -47,7 +57,7 @@ async function main(): Promise<void> {
     forceExitTimer.unref();
 
     server.close((serverError) => {
-      void Promise.all([mongo.client.close(), redis.quit()])
+      void Promise.all([mongo.client.close(), redis.quit(), cassandra.shutdown()])
         .then(() => {
           clearTimeout(forceExitTimer);
           if (serverError) {

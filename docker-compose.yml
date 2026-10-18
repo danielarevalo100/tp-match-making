@@ -112,10 +112,18 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_CONNECT_RETRIES: 15
       REDIS_RETRY_DELAY_MS: 2000
+      CASSANDRA_CONTACT_POINTS: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_LOCAL_DATACENTER: datacenter1
+      CASSANDRA_KEYSPACE: gaming
+      CASSANDRA_CONNECT_RETRIES: 20
+      CASSANDRA_RETRY_DELAY_MS: 3000
     depends_on:
       mongodb:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      cassandra:
         condition: service_healthy
     ports:
       - "${GAMING_APP_PORT:-3001}:3000"

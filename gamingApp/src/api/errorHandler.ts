@@ -3,6 +3,10 @@ import { ZodError } from "zod";
 
 import { InjectedFailureError, StorageError } from "../shared/errors.js";
 import {
+  MatchNotLiveError,
+  PlayerNotInMatchError,
+} from "./modules/matchEvents/business/models/matchEventErrors.js";
+import {
   AccountNotActiveError,
   AlreadyInMatchError,
   AlreadyInQueueError,
@@ -100,6 +104,20 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
 
   if (error instanceof FormationContendedError) {
     response.status(409).json({ error: "FORMATION_CONTENDED", message: error.message });
+    return;
+  }
+
+  if (error instanceof MatchNotLiveError) {
+    response.status(404).json({ error: "MATCH_NOT_LIVE", message: error.message });
+    return;
+  }
+
+  if (error instanceof PlayerNotInMatchError) {
+    response.status(422).json({
+      error: "PLAYER_NOT_IN_MATCH",
+      message: error.message,
+      playerId: error.playerId,
+    });
     return;
   }
 

@@ -121,7 +121,7 @@ scripts/demo-problem-2.sh
 
 ## Qué asumen los problemas siguientes
 
-- **P3 (eventos):** puede leer `match:{matchId}` (HASH vivo, `players` en CSV) y `player:{id}:active_match`.
+- **P3 (eventos):** ya implementado (`problema3.md`). Lee `match:{matchId}` (HASH vivo, `players` en CSV) para validar que la partida está viva y que los jugadores pertenecen a ella; si `match:{matchId}` desaparece, deja de aceptar eventos.
 - **P4 (cierre):** debe borrar `active_match` de cada jugador, borrar o archivar `match:{matchId}`, y pasar `matches.status` a `closed`. Debe seguir el mismo patrón de saga (orden, compensación, idempotencia, diario).
 - **P8:** `status: "voided"` en `matches` está reservado para partidas anuladas.
 - Cualquier cambio en el formato del ticket o de la formación afecta a `restoreFormationScript`, que reconstruye los tickets desde el snapshot.

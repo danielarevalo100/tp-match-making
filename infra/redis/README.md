@@ -37,6 +37,8 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 | `mm:formation:{matchId}` | HASH | Journal of a match formation: `status` (`reserved` → `committed` / `rolled_back`), `tickets` (JSON snapshot of the reserved tickets, immutable), `createdAt`, and `abandoned:{playerId}` for reserved players who left. | problem 2 | none (kept as audit of the saga) |
 | `mm:formations` | ZSET | Formations still `reserved`, scored by creation time; used by `POST /matchmaking/matches/recover` to compensate stale ones. | problem 2 | removed on commit / rollback |
 | `match:{matchId}` | HASH | Live match: `matchId`, `mode`, `region`, `status=in_progress`, `startedAt`, `players` (csv). Base for problem 3. | problem 2 (commit) | removed by problem 4 |
+| `match:{matchId}:scoreboard` | HASH | Live scoreboard: `events`, `lastEventTs` and per player `{playerId}:kills|deaths|objectives|score|connected|connectionTs`. | problem 3 (`applyEventScript`) | removed by problem 4 |
+| `match:{matchId}:applied` | SET | `eventId`s already applied to the scoreboard; makes the non-idempotent counters idempotent. | problem 3 | removed by problem 4 |
 
 ### Problem 2: match formation saga
 
@@ -53,6 +55,10 @@ Fault injection: header `x-fail-at: matchmaking.reserve | matchmaking.createMatc
 Denormalization: the ticket keeps a snapshot of the player's `mmr` read from MongoDB (`players.ratings.<mode>.mmr`, falling back to `game_modes.initialRating`). It cannot go stale while the player is queued: ratings only change when a match closes (problem 4) or a sanction is reverted (problem 8), and a queued player is in neither.
 
 Problem 1 joins a queue with one atomic Lua script (`gamingApp/src/api/modules/matchmaking/infrastructure/scripts/matchmakingScripts.ts`): it checks the ticket and `active_match` and writes the ticket and both ZSET entries in a single step, so concurrent requests for the same player cannot leave them in two queues. Tickets do not expire; stale tickets are handled by match formation (problem 2).
+
+### Problem 3: match events
+
+`POST /matches/:matchId/events` writes each event to Cassandra first and then applies it to `match:{matchId}:scoreboard` with one Lua script that skips an `eventId` already in `match:{matchId}:applied` and refuses if `match:{matchId}` no longer exists. The scoreboard is derived from the Cassandra log and can be rebuilt with `POST /matches/:matchId/scoreboard/reconcile`. Details in `docs/problema3.md`.
 
 ## Future additions
 
