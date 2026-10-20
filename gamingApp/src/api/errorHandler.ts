@@ -3,6 +3,12 @@ import { ZodError } from "zod";
 
 import { InjectedFailureError, StorageError } from "../shared/errors.js";
 import {
+  MatchCloseUnavailableError,
+  MatchClosureConflictError,
+  MatchClosureParticipantsError,
+  MatchForClosureNotFoundError,
+} from "./modules/matchClosure/business/models/matchClosureErrors.js";
+import {
   MatchNotLiveError,
   PlayerNotInMatchError,
 } from "./modules/matchEvents/business/models/matchEventErrors.js";
@@ -109,6 +115,39 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
 
   if (error instanceof MatchNotLiveError) {
     response.status(404).json({ error: "MATCH_NOT_LIVE", message: error.message });
+    return;
+  }
+
+  if (error instanceof MatchForClosureNotFoundError) {
+    response.status(404).json({ error: "MATCH_NOT_FOUND", message: error.message });
+    return;
+  }
+
+  if (error instanceof MatchClosureConflictError) {
+    response.status(409).json({
+      currentStatus: error.currentStatus,
+      error: "MATCH_CLOSE_CONFLICT",
+      matchId: error.matchId,
+      message: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof MatchClosureParticipantsError) {
+    response.status(422).json({
+      error: "INVALID_MATCH_RESULTS",
+      message: error.message,
+      reason: error.reason,
+    });
+    return;
+  }
+
+  if (error instanceof MatchCloseUnavailableError) {
+    response.status(503).json({
+      error: "MATCH_CLOSE_UNAVAILABLE",
+      matchId: error.matchId,
+      message: error.message,
+    });
     return;
   }
 

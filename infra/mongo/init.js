@@ -266,6 +266,12 @@ ensureCollection("players", {
         },
       },
     },
+    appliedRatingMatches: {
+      bsonType: "array",
+      description: "Match ids whose eventual rating adjustment was already applied",
+      uniqueItems: true,
+      items: { bsonType: "string" },
+    },
   },
 });
 
@@ -384,7 +390,7 @@ ensureCollection("matches", {
     _id: { bsonType: "string", description: "Shared match id (UUID)" },
     mode: { bsonType: "string" },
     region: { bsonType: "string" },
-    status: { enum: ["in_progress", "closed", "voided"] },
+    status: { enum: ["in_progress", "closing", "closed", "voided"] },
     ratingRange: { bsonType: NUMBER },
     createdAt: { bsonType: "date" },
     players: {
@@ -440,6 +446,16 @@ gamingDb.schema_metadata.updateOne(
   {
     $setOnInsert: {
       description: "Matches created by the matchmaking formation saga",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 5 },
+  {
+    $setOnInsert: {
+      description: "Idempotent match closure and eventual rating adjustments",
       appliedAt: new Date(),
     },
   },

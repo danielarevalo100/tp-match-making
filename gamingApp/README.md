@@ -140,6 +140,18 @@ In-match events and live scoreboard (problem 3). Events are appended to Cassandr
 
 Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `matchEvents.applyScoreboard`, `matchEvents.listEvents`, `matchEvents.findScoreboard`.
 
+### matchClosure
+
+Match closure and eventual scoring (problem 4). The workflow prepares `closing` in Redis and MongoDB, commits the immutable `match_finished` event in Cassandra, releases players atomically, and then rebuilds the authoritative score from Cassandra. See [`docs/problema4.md`](../docs/problema4.md).
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `POST` | `/matches/:matchId/finish` | Idempotently close, release players and attempt scoring |
+
+Lifecycle and scoring are independent: a response may contain `status=closed`, `playersReleased=true`, and `scoringStatus=failed`. Repeating the same payload retries scoring without duplicating the fixed rating delta (`win +25`, `loss -25`, `draw 0`).
+
+Fault injection steps: `matchClosure.findMatch`, `matchClosure.beginClosing`, `matchClosure.prepareMongo`, `matchClosure.appendFinished`, `matchClosure.releasePlayers`, `matchClosure.markClosed`, `matchClosure.beginScoring`, `matchClosure.listEvents`, `matchClosure.applyRating`, `matchClosure.completeScoring`.
+
 ## Shared endpoints
 
 | Method | Path      | Purpose                     |

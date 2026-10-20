@@ -138,6 +138,15 @@ describe("MatchEventService", () => {
     assert.equal(context.log.rows.size, 0);
   });
 
+  it("rejects events as soon as match closure moves the live match to closing", async () => {
+    const live = context.scoreboard.liveMatches.get(matchId);
+    assert.ok(live);
+    context.scoreboard.liveMatches.set(matchId, { ...live, status: "closing" });
+
+    await assert.rejects(context.service.record(kill()), { name: "MatchNotLiveError" });
+    assert.equal(context.log.rows.size, 0);
+  });
+
   it("a failure writing the log leaves nothing behind in either engine", async () => {
     await assert.rejects(
       withFailure("matchEvents.appendEvent", () => context.service.record(kill())),

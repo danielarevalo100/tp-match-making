@@ -9,7 +9,7 @@
 // ARGV: eventId, type, playerId, targetPlayerId ('' when none), points, tsMs.
 // Replies: 'APPLIED' | 'DUPLICATE' | 'NOT_LIVE'.
 export const applyEventScript = `
-if redis.call('EXISTS', KEYS[3]) == 0 then return 'NOT_LIVE' end
+if redis.call('HGET', KEYS[3], 'status') ~= 'in_progress' then return 'NOT_LIVE' end
 if redis.call('SADD', KEYS[1], ARGV[1]) == 0 then return 'DUPLICATE' end
 
 local board = KEYS[2]

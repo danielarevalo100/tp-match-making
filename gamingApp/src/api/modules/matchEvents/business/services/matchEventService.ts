@@ -1,3 +1,4 @@
+import { isGameplayEvent } from "../models/matchEvent.js";
 import type {
   EventPage,
   EventQuery,
@@ -94,7 +95,8 @@ export class MatchEventService {
         ...(pageState ? { pageState } : {}),
       });
       read += page.events.length;
-      if (page.events.length > 0) repaired += await this.scoreboard.applyMany(page.events);
+      const gameplayEvents = page.events.filter(isGameplayEvent);
+      if (gameplayEvents.length > 0) repaired += await this.scoreboard.applyMany(gameplayEvents);
       pageState = page.nextPageState ?? undefined;
     } while (pageState);
 

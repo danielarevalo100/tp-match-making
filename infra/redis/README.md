@@ -39,6 +39,7 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 | `match:{matchId}` | HASH | Live match: `matchId`, `mode`, `region`, `status=in_progress`, `startedAt`, `players` (csv). Base for problem 3. | problem 2 (commit) | removed by problem 4 |
 | `match:{matchId}:scoreboard` | HASH | Live scoreboard: `events`, `lastEventTs` and per player `{playerId}:kills|deaths|objectives|score|connected|connectionTs`. | problem 3 (`applyEventScript`) | removed by problem 4 |
 | `match:{matchId}:applied` | SET | `eventId`s already applied to the scoreboard; makes the non-idempotent counters idempotent. | problem 3 | removed by problem 4 |
+| `match:{matchId}:closure` | HASH | Short-lived receipt of a completed release: `closureId`, `status=released`, `releasedAt`. Protects an idempotent retry from touching a player's newer match. | problem 4 | 24 hours |
 
 ### Problem 2: match formation saga
 
@@ -58,7 +59,11 @@ Problem 1 joins a queue with one atomic Lua script (`gamingApp/src/api/modules/m
 
 ### Problem 3: match events
 
-`POST /matches/:matchId/events` writes each event to Cassandra first and then applies it to `match:{matchId}:scoreboard` with one Lua script that skips an `eventId` already in `match:{matchId}:applied` and refuses if `match:{matchId}` no longer exists. The scoreboard is derived from the Cassandra log and can be rebuilt with `POST /matches/:matchId/scoreboard/reconcile`. Details in `docs/problema3.md`.
+`POST /matches/:matchId/events` writes each event to Cassandra first and then applies it to `match:{matchId}:scoreboard` with one Lua script that skips an `eventId` already in `match:{matchId}:applied` and requires `match:{matchId}.status=in_progress`. The scoreboard is derived from the Cassandra log and can be rebuilt with `POST /matches/:matchId/scoreboard/reconcile`. Details in `docs/problema3.md`.
+
+### Problem 4: match closure
+
+`POST /matches/:matchId/finish` prepares `closing`, appends the irreversible `match_finished` event to Cassandra, then atomically releases every matching `active_match` and removes the live Redis keys. `match:{id}:closure` is retained for 24 hours so a lost response can be retried without deleting a newer `active_match`. The final score is rebuilt from Cassandra and ratings are eventually applied in MongoDB. Details and the rollback boundary are in `docs/problema4.md`.
 
 ## Future additions
 

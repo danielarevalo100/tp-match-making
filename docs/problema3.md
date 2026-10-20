@@ -14,7 +14,7 @@ Requiere haber leído `problema2.md` (de ahí sale `match:{matchId}` y el `match
 
 Redis **no es una caché de Cassandra**: Cassandra nunca guarda el marcador, y Redis nunca guarda el historial. El marcador es estado vivo con ciclo de vida propio (nace en P2, se actualiza acá, se consume/archiva en P4). Esto importa porque la consigna (sección 2) no acepta un motor que solo replica datos de otro para acelerar lecturas.
 
-El marcador es **derivado** del log (se puede reconstruir con `reconcile`), pero su lectura "al instante" es una responsabilidad que el log no puede cumplir (agregar la partición en cada lectura no es "instantáneo").
+El marcador es **derivado** del log (se puede reconstruir con `reconcile`), pero su lectura "al instante" es una responsabilidad que el log no puede cumplir (agregar la partición en cada lectura no es "instantáneo"). P4 reconstruye su resultado final directamente desde Cassandra y no confía en que esta proyección esté completa.
 
 ## Identificadores
 
@@ -54,7 +54,7 @@ Probado en vivo: con `docker stop gaming-cassandra` el POST responde `503 {"erro
 
 No se usó `SET NX` + `HINCRBY` por separado: si el proceso muere entre los dos, el evento queda marcado como aplicado pero nunca se sumó, y los reintentos lo saltean para siempre.
 
-El mismo script primero comprueba `EXISTS match:{id}`: si P4 ya borró la partida, devuelve `NOT_LIVE` y **no** recrea claves huérfanas.
+El mismo script primero exige `match:{id}.status = in_progress`: desde que P4 pasa a `closing`, devuelve `NOT_LIVE` y **no** recrea claves huérfanas.
 
 ### Campos del marcador (HASH `match:{matchId}:scoreboard`)
 
@@ -156,7 +156,7 @@ Variables: `APP_URL` (`http://127.0.0.1:3001`), `MATCHES` (100), `EVENTS_PER_MAT
 
 Medición de referencia (una PC, Docker Desktop, un solo proceso Node, 100 partidas × 300 eventos = 31 500 requests, 64 en vuelo): ~1 200 req/s, `POST` p50 ≈ 50 ms / p95 ≈ 78 ms (incluye cola del cliente), lectura de marcador bajo carga p50 ≈ 33 ms y sin carga ≈ 4 ms. 0 diferencias en marcadores y en el log. Son números indicativos, no un benchmark.
 
-Las partidas quedan vivas (P4 todavía no existe). Para limpiar a mano: `docker compose exec redis redis-cli --scan --pattern 'match:*'` y borrar; en Mongo `db.matches.deleteMany({status:"in_progress"})`.
+P4 cierra las partidas mediante `POST /matches/:matchId/finish`, libera jugadores y elimina las claves vivas. Ver `problema4.md`.
 
 ## Tests
 
@@ -196,18 +196,18 @@ scripts/demo-problem-3.mjs
 ## Limitaciones conocidas
 
 - **Una lectura extra de Redis por evento** (paso 0). Se puede cachear la lista de jugadores por partida si hiciera falta más throughput.
-- **Evento tardío tras el cierre**: si P4 cierra la partida entre el paso 0 y el 2, el evento queda en el log pero no puntúa y la respuesta es `404`. Es una ventana de milisegundos; P4 podría rechazar eventos con `tsMs` posterior al cierre.
+- **Evento concurrente con el cierre**: si P4 cambia a `closing` entre el paso 0 y el 2, el evento puede quedar en el log pero no puntuar y la respuesta es `404`. P4 simplifica esta frontera con el contrato de que el servidor drena eventos antes de enviar `finish`; una solución productiva usaría secuencias.
 - **`eventId` reusado con otro `tsMs`** (error del productor): Redis lo cuenta una vez, pero Cassandra guarda dos filas. No se detecta.
 - `:applied` crece con la partida (36 B por evento) y no tiene TTL; P4 debe borrarlo.
 - Redis ejecuta el script con `EVAL` (envía el texto cada vez). Se puede pasar a `EVALSHA`.
 - No hay endpoint por lote, ni autenticación (el servidor de juego se asume confiable), ni worker periódico de `reconcile`.
-- Los tipos de evento son los cuatro de la consigna. El DER admite eventos sin jugador (`id_jugador` opcional); acá `playerId` es obligatorio.
+- Los eventos de juego son los cuatro de la consigna y requieren `playerId`. P4 agrega el evento de ciclo de vida `match_finished`, sin jugador, directamente desde el flujo de cierre; el endpoint general de eventos no permite que un cliente lo fabrique.
 - El `kill` no se valida contra el estado de conexión del autor ni de la víctima.
 
 ## Qué asumen los problemas siguientes
 
-- **P4 (cierre):** al cerrar, leer el marcador final (`getScoreboard`) y los eventos si necesita estadísticas; luego **borrar** `match:{id}:scoreboard` y `match:{id}:applied` junto con `match:{id}` y los `active_match`. Mientras exista `match:{id}`, P3 sigue aceptando eventos; borrarlo es lo que cierra la ventana (el script devuelve `NOT_LIVE`). Si P4 compensa y reabre, el marcador se reconstruye con `reconcile`.
-- **P6 (historial/estadísticas):** `events_by_match` sirve para el detalle de una partida; la lista "últimas 50 partidas de un jugador" necesita su propia tabla (p. ej. `matches_by_player`, partición `player_id`, clustering `ended_at DESC`) que debe diseñar P4/P6 con su consulta.
+- **P4 (cierre):** implementado en `problema4.md`. Pasa la partida a `closing`, guarda `match_finished`, libera jugadores y elimina las claves vivas. El resultado final se reduce desde Cassandra; Redis no es autoritativo para el cierre.
+- **P6 (historial/estadísticas):** `events_by_match` sirve para el detalle de una partida; la lista "últimas 50 partidas de un jugador" necesita su propia tabla (p. ej. `matches_by_player`, partición `player_id`, clustering `ended_at DESC`) diseñada desde esa consulta.
 - **P7 (comportamiento irregular):** recorre relaciones entre jugadores (Neo4j). Si necesitara eventos por jugador, agregar `events_by_player` y escribirla en el paso 1.
 - **P8 (reversión):** para saber qué anular se puede leer el log por partida; el log **no se modifica** (es inmutable): la anulación se registra con un evento nuevo o en `matches.status = "voided"`.
 - Cualquier cambio en el script Lua debe reflejarse en `InMemoryLiveScoreboard`.

@@ -83,7 +83,7 @@ export class InMemoryLiveScoreboard implements LiveScoreboardPort {
   }
 
   private applyOne(event: MatchEvent): ApplyOutcome {
-    if (!this.liveMatches.has(event.matchId)) return "not_live";
+    if (this.liveMatches.get(event.matchId)?.status !== "in_progress") return "not_live";
     const seen = this.applied.get(event.matchId) ?? new Set<string>();
     this.applied.set(event.matchId, seen);
     if (seen.has(event.eventId)) return "duplicate";

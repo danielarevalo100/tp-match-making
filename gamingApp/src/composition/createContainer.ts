@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 
 import type { ModuleRoute } from "../api/app.js";
 import type { MongoConnection } from "../infrastructure/mongo/mongoConnection.js";
+import { createMatchClosureComposition } from "./matchClosureComposition.js";
 import { createMatchEventsComposition } from "./matchEventsComposition.js";
 import { createMatchmakingComposition } from "./matchmakingComposition.js";
 import { createPlayersComposition } from "./playersComposition.js";
@@ -21,6 +22,11 @@ export function createContainer(connections: ContainerConnections): {
       createPlayersComposition(connections.mongo.database),
       createMatchmakingComposition(connections.mongo.database, connections.redis),
       createMatchEventsComposition(connections.cassandra, connections.redis),
+      createMatchClosureComposition(
+        connections.mongo.database,
+        connections.redis,
+        connections.cassandra,
+      ),
     ],
   };
 }

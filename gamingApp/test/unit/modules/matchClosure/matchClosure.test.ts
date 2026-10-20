@@ -1,0 +1,224 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { beforeEach, describe, it } from "node:test";
+
+import request from "supertest";
+
+import { createApp } from "../../../../src/api/app.js";
+import type {
+  FinishMatchInput,
+  MatchClosureRecord,
+} from "../../../../src/api/modules/matchClosure/business/models/matchClosure.js";
+import { MatchClosureService } from "../../../../src/api/modules/matchClosure/business/services/matchClosureService.js";
+import { MatchClosureController } from "../../../../src/api/modules/matchClosure/presentation/controllers/matchClosureController.js";
+import { createMatchClosureRouter } from "../../../../src/api/modules/matchClosure/presentation/routers/matchClosureRouter.js";
+import { InjectedFailureError } from "../../../../src/shared/errors.js";
+import { requestContext } from "../../../../src/shared/requestContext.js";
+import {
+  InMemoryLiveMatchClosure,
+  InMemoryMatchClosureLog,
+  InMemoryMatchClosureRepository,
+} from "../../../support/inMemory/inMemoryMatchClosure.js";
+
+const matchId = randomUUID();
+const alice = randomUUID();
+const bob = randomUUID();
+
+function build() {
+  const matches = new InMemoryMatchClosureRepository();
+  const live = new InMemoryLiveMatchClosure();
+  const log = new InMemoryMatchClosureLog();
+  const match: MatchClosureRecord = {
+    closureId: null,
+    eventId: null,
+    id: matchId,
+    mode: "ranked_1v1",
+    players: [
+      { enqueuedAt: 1, mmr: 1_500, playerId: alice },
+      { enqueuedAt: 2, mmr: 1_520, playerId: bob },
+    ],
+    results: null,
+    scoringStatus: "not_started",
+    status: "in_progress",
+  };
+  matches.matches.set(matchId, match);
+  matches.ratings.set(alice, 1_500);
+  matches.ratings.set(bob, 1_520);
+  live.live.set(matchId, { closureId: null, players: [alice, bob], status: "in_progress" });
+  live.activeMatches.set(alice, matchId);
+  live.activeMatches.set(bob, matchId);
+  log.events.push(
+    { playerId: alice, points: 1, targetPlayerId: bob, type: "kill" },
+    { playerId: alice, points: 10, targetPlayerId: null, type: "objective" },
+  );
+  const service = new MatchClosureService(matches, live, log);
+  const app = createApp({
+    checkReadiness: async () => true,
+    routes: [
+      {
+        path: "/matches",
+        router: createMatchClosureRouter(new MatchClosureController(service)),
+      },
+    ],
+    serviceName: "gaming-app-test",
+  });
+  return { app, live, log, matches, service };
+}
+
+function finish(overrides: Partial<FinishMatchInput> = {}): FinishMatchInput {
+  return {
+    closureId: randomUUID(),
+    eventId: randomUUID(),
+    matchId,
+    reason: "normal",
+    results: [
+      { playerId: alice, result: "win" },
+      { playerId: bob, result: "loss" },
+    ],
+    tsMs: 1_700_000_100_000,
+    ...overrides,
+  };
+}
+
+const withFailure = <T>(step: string, run: () => Promise<T>): Promise<T> =>
+  requestContext.run({ failAt: step }, run);
+
+describe("MatchClosureService", () => {
+  let context = build();
+  beforeEach(() => {
+    context = build();
+  });
+
+  it("closes the match, releases players and applies the eventual score", async () => {
+    const input = finish();
+    const result = await context.service.finish(input);
+
+    assert.deepEqual(result, {
+      closureId: input.closureId,
+      matchId,
+      playersReleased: true,
+      scoringStatus: "applied",
+      status: "closed",
+    });
+    assert.equal(context.log.finished.size, 1);
+    assert.equal(context.live.live.has(matchId), false);
+    assert.equal(context.live.activeMatches.size, 0);
+    assert.equal(context.matches.matches.get(matchId)?.status, "closed");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+    assert.equal(context.matches.ratings.get(bob), 1_495);
+    assert.deepEqual(context.matches.finalScores.get(matchId)?.[0], {
+      deaths: 0,
+      kills: 1,
+      mmrAfter: 1_525,
+      mmrBefore: 1_500,
+      objectives: 1,
+      playerId: alice,
+      ratingDelta: 25,
+      result: "win",
+      score: 11,
+    });
+  });
+
+  it("compensates preparation when the injected Cassandra failure happened before commit", async () => {
+    const input = finish();
+    await assert.rejects(
+      withFailure("matchClosure.appendFinished", () => context.service.finish(input)),
+      InjectedFailureError,
+    );
+
+    assert.equal(context.matches.matches.get(matchId)?.status, "in_progress");
+    assert.equal(context.live.live.get(matchId)?.status, "in_progress");
+    assert.equal(context.live.activeMatches.size, 2);
+    assert.equal(context.log.finished.size, 0);
+  });
+
+  it("does not roll back after the finish event and resumes forward on retry", async () => {
+    const input = finish();
+    await assert.rejects(
+      withFailure("matchClosure.releasePlayers", () => context.service.finish(input)),
+      InjectedFailureError,
+    );
+
+    assert.equal(context.log.finished.size, 1);
+    assert.equal(context.matches.matches.get(matchId)?.status, "closing");
+    assert.equal(context.live.live.get(matchId)?.status, "closing");
+
+    const retried = await context.service.finish(input);
+    assert.equal(retried.status, "closed");
+    assert.equal(context.live.activeMatches.size, 0);
+  });
+
+  it("keeps the match closed and players free when scoring fails", async () => {
+    const input = finish();
+    const result = await withFailure("matchClosure.listEvents", () =>
+      context.service.finish(input),
+    );
+
+    assert.equal(result.scoringStatus, "failed");
+    assert.equal(context.matches.matches.get(matchId)?.status, "closed");
+    assert.equal(context.matches.matches.get(matchId)?.scoringStatus, "failed");
+    assert.equal(context.live.activeMatches.size, 0);
+  });
+
+  it("retries failed scoring without applying ratings twice", async () => {
+    const input = finish();
+    await withFailure("matchClosure.completeScoring", () => context.service.finish(input));
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+
+    const retried = await context.service.finish(input);
+    assert.equal(retried.scoringStatus, "applied");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+    assert.equal(context.matches.ratingApplications.size, 2);
+  });
+
+  it("does not downgrade applied scoring when the completion response is lost", async () => {
+    const input = finish();
+    const result = await withFailure("matchClosure.completeScoringAfterWrite", () =>
+      context.service.finish(input),
+    );
+
+    assert.equal(result.scoringStatus, "applied");
+    assert.equal(context.matches.matches.get(matchId)?.scoringStatus, "applied");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+  });
+
+  it("rejects incomplete or foreign results before changing state", async () => {
+    await assert.rejects(
+      context.service.finish(finish({ results: [{ playerId: alice, result: "win" }] })),
+      { name: "MatchClosureParticipantsError" },
+    );
+    await assert.rejects(
+      context.service.finish(
+        finish({
+          results: [
+            { playerId: alice, result: "win" },
+            { playerId: randomUUID(), result: "loss" },
+          ],
+        }),
+      ),
+      { name: "MatchClosureParticipantsError" },
+    );
+    assert.equal(context.matches.matches.get(matchId)?.status, "in_progress");
+  });
+});
+
+describe("match closure API", () => {
+  it("validates and closes a match", async () => {
+    const context = build();
+    const input = finish();
+    const { matchId: _matchId, ...body } = input;
+    const response = await request(context.app).post(`/matches/${matchId}/finish`).send(body);
+
+    assert.equal(response.status, 200);
+    assert.equal((response.body as { status: string }).status, "closed");
+  });
+
+  it("returns 400 when the request does not contain enough results", async () => {
+    const context = build();
+    const input = finish({ results: [{ playerId: alice, result: "win" }] });
+    const { matchId: _matchId, ...body } = input;
+    const response = await request(context.app).post(`/matches/${matchId}/finish`).send(body);
+
+    assert.equal(response.status, 400);
+  });
+});

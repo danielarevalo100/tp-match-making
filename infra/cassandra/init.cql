@@ -6,7 +6,8 @@ WITH replication = {
   'replication_factor': 1
 };
 
--- Problem 3: append-only log of everything that happens during a match.
+-- Problems 3 and 4: append-only log of everything that happens during a match,
+-- including the lifecycle event `match_finished` (which has no player_id).
 -- Queries served:
 --   * all events of a match, in order            (WHERE match_id = ?)
 --   * events of a match within a time range      (WHERE match_id = ? AND ts >= ? AND ts <= ?)

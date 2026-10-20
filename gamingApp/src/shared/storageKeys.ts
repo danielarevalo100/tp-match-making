@@ -15,6 +15,7 @@ export const redisKeys = {
   formation: (matchId: string): string => `mm:formation:${matchId}`,
   formationIndex: "mm:formations",
   match: (matchId: string): string => `match:${matchId}`,
+  matchClosure: (matchId: string): string => `match:${matchId}:closure`,
   matchAppliedEvents: (matchId: string): string => `match:${matchId}:applied`,
   matchScoreboard: (matchId: string): string => `match:${matchId}:scoreboard`,
   ratingQueue: (mode: string, region: string): string => `mm:q:${mode}:${region}:rating`,

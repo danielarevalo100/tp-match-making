@@ -18,6 +18,23 @@ export type MatchEvent = {
   type: MatchEventType;
 };
 
+export type MatchFinishedLogEvent = {
+  detail: Record<string, unknown> | null;
+  eventId: string;
+  matchId: string;
+  playerId: null;
+  points: 0;
+  targetPlayerId: null;
+  tsMs: number;
+  type: "match_finished";
+};
+
+export type MatchLogEvent = MatchEvent | MatchFinishedLogEvent;
+
+export function isGameplayEvent(event: MatchLogEvent): event is MatchEvent {
+  return event.type !== "match_finished";
+}
+
 /** Live match published by problem 2 (`match:{matchId}` in Redis). */
 export type LiveMatch = {
   matchId: string;
@@ -69,6 +86,6 @@ export type EventQuery = {
 };
 
 export type EventPage = {
-  events: readonly MatchEvent[];
+  events: readonly MatchLogEvent[];
   nextPageState: string | null;
 };
