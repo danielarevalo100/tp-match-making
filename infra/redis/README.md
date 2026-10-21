@@ -40,6 +40,9 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 | `match:{matchId}:scoreboard` | HASH | Live scoreboard: `events`, `lastEventTs` and per player `{playerId}:kills|deaths|objectives|score|connected|connectionTs`. | problem 3 (`applyEventScript`) | removed by problem 4 |
 | `match:{matchId}:applied` | SET | `eventId`s already applied to the scoreboard; makes the non-idempotent counters idempotent. | problem 3 | removed by problem 4 |
 | `match:{matchId}:closure` | HASH | Short-lived receipt of a completed release: `closureId`, `status=released`, `releasedAt`. Protects an idempotent retry from touching a player's newer match. | problem 4 | 24 hours |
+| `lb:{seasonId}:{mode}:global` | ZSET | Season leaderboard: `playerId` scored by MMR. Position = `ZREVRANK` + 1 (equal MMR ordered by descending `playerId`). | problem 4 (publish after scoring), problem 5 rebuild | none |
+| `lb:{seasonId}:{mode}:region:{region}` | ZSET | Same board restricted to one region. | problem 4, problem 5 rebuild | none |
+| `lb:{seasonId}:{mode}:members` | HASH | `playerId` → `"{revision}\|{region}"`: last published revision (older publications are ignored) and the regional board that holds the player (a region change moves them). | problem 4, problem 5 rebuild | none |
 
 ### Problem 2: match formation saga
 

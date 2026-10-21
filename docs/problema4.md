@@ -137,8 +137,9 @@ El script deja durante 24 horas `match:{matchId}:closure` con `status=released`.
 
 7. Mongo cambia `pending|failed → calculating` e incrementa `scoringAttempts`.
 8. Cassandra se lee en páginas de 500 y se reducen solo los eventos de juego.
-9. Se aplica rating por jugador, idempotente por `matchId`.
+9. Se aplica rating por jugador, idempotente por `matchId`. Si la partida cuenta para una temporada (modo `ranked` y temporada activa que contiene `createdAt`), el mismo update escribe el standing `seasonRatings.<season>.<mode>` (ver P5).
 10. Mongo guarda `finalScoreboard` y cambia a `scoringStatus=applied`; ante un fallo registra `failed` y `scoringLastError`.
+11. Redis publica los standings de la partida en el leaderboard (un script Lua por partida) y Mongo marca `leaderboard.status=published|not_ranked`. Es el último paso: una falla deja el leaderboard atrasado (`leaderboardStatus=pending`, `202`), nunca adelantado respecto del rating o del historial. Ver [problema5.md](problema5.md).
 
 No se implementa un worker ni outbox en este punto. El propio `POST finish`, repetido con los mismos ids, retoma un cierre o scoring incompleto. `scoringStatus` es un checkpoint durable que un worker futuro podrá consultar.
 
@@ -224,13 +225,13 @@ Regla acordada para el TP:
 | `loss` | `-25` |
 | `draw` | `0` |
 
-Mongo actualiza `ratings.<mode>.mmr` con `$inc` y suma un partido jugado. Cada jugador mantiene `appliedRatingMatches`; la misma operación usa el filtro:
+Mongo suma el delta a `ratings.<mode>.mmr` y un partido jugado. Cada jugador mantiene `appliedRatingMatches`; la misma operación usa el filtro:
 
 ```text
 _id = playerId AND appliedRatingMatches != matchId
 ```
 
-y en una única actualización del documento ejecuta `$inc` y `$addToSet(matchId)`. Si una partida aplicó algunos jugadores y falló, el reintento omite los ya procesados y completa los restantes.
+y en una única actualización del documento (pipeline de agregación) suma el delta, agrega `matchId` a `appliedRatingMatches` y, si la partida cuenta para una temporada, copia el MMR resultante al standing de la temporada. Si el jugador todavía no tenía rating en el modo, parte del MMR con que P2 formó la partida (antes un `$inc` sobre un campo inexistente dejaba el MMR en el delta). Si una partida aplicó algunos jugadores y falló, el reintento omite los ya procesados y completa los restantes.
 
 Los deltas fijos son conmutativos y toleran que partidas diferentes se procesen fuera de orden. Se acepta una consecuencia de la prioridad elegida: un jugador puede reencolarse con el MMR anterior mientras su scoring está pendiente. El rating nuevo aparecerá después; no se bloquea al jugador.
 
@@ -260,6 +261,7 @@ El snapshot final conserva `mmrBefore`, `ratingDelta` y `mmrAfter` calculados de
 | Lectura Cassandra o rating falla | Partida `closed`, jugadores libres, scoring `failed` | `202`; repetir finish para reintentar scoring. |
 | Complete scoring falla antes de confirmar | Ajustes parciales idempotentes | Reintentar; no duplica los aplicados. |
 | Mongo confirma `applied` pero se pierde la respuesta | Permanece `applied` | La relectura devuelve éxito y nunca lo degrada a `failed`. |
+| Publicación del leaderboard falla | Rating e historial aplicados, Redis sin cambios | `202` con `leaderboardStatus=pending`; repetir finish solo republica (o `POST /leaderboards/:mode/:season/rebuild`). |
 
 ## Inyección de fallas
 
@@ -275,10 +277,14 @@ matchClosure.appendFinished
 matchClosure.releasePlayers
 matchClosure.markClosed
 matchClosure.beginScoring
+matchClosure.findLeaderboardSeason
 matchClosure.listEvents
 matchClosure.applyRating
 matchClosure.completeScoring
 matchClosure.failScoring
+matchClosure.findStandings
+leaderboard.publish
+matchClosure.markLeaderboard
 ```
 
 ## Pruebas

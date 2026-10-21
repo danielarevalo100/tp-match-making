@@ -5,6 +5,7 @@ import type { ModuleRoute } from "../api/app.js";
 import type { MongoConnection } from "../infrastructure/mongo/mongoConnection.js";
 import type { Neo4jConnection } from "../infrastructure/neo4j/neo4jConnection.js";
 import { createFraudComposition } from "./fraudComposition.js";
+import { createLeaderboardsComposition } from "./leaderboardsComposition.js";
 import { createMatchClosureComposition } from "./matchClosureComposition.js";
 import { createMatchEventsComposition } from "./matchEventsComposition.js";
 import { createMatchmakingComposition } from "./matchmakingComposition.js";
@@ -33,6 +34,7 @@ export function createContainer(connections: ContainerConnections): {
       ),
       createPlayerHistoryComposition(connections.mongo.database, connections.cassandra),
       createFraudComposition(connections.mongo.database, connections.neo4j),
+      createLeaderboardsComposition(connections.mongo.database, connections.redis),
     ],
   };
 }

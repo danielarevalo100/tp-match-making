@@ -20,6 +20,7 @@ MongoDB is the source of truth for durable domain data that is read in many diff
 
 - **Shared identifier:** `players._id` (and the other UUIDs) is the identifier used in every engine: Redis keys, Cassandra partitions and Neo4j nodes.
 - **Rating per game mode** (DER recommendation): `players.ratings.<modeId> = { mmr, gamesPlayed, updatedAt }`. A map keyed by mode lets a single update target one mode (`$inc: { "ratings.ranked_5v5.mmr": 12 }`). Historical snapshots (`mmr_before` / `mmr_after`) stay with the match history.
+- **Season standing** (problem 5): `players.seasonRatings.<seasonId>.<modeId> = { mmr, gamesPlayed, region, revision, updatedAt }`. Problem 4 writes it in the same update as `ratings` (aggregation pipeline), so the standing always copies the rating it belongs to. It is the durable source of the Redis leaderboards; positions are derived and live only in Redis. See `docs/problema5.md`.
 - **Player region** (DER recommendation): derived from `country` through `regions.countries` when the player registers.
 - **Normalized identity:** `username` and `email` are stored in lowercase. The API normalizes both and MongoDB validators reject uppercase values.
 - **Profile audit:** `updatedAt` is initialized from `registeredAt` for existing records and changes whenever the profile or account status changes.

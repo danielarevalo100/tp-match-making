@@ -14,6 +14,7 @@ import { MatchClosureController } from "../../../../src/api/modules/matchClosure
 import { createMatchClosureRouter } from "../../../../src/api/modules/matchClosure/presentation/routers/matchClosureRouter.js";
 import { InjectedFailureError } from "../../../../src/shared/errors.js";
 import { requestContext } from "../../../../src/shared/requestContext.js";
+import { InMemoryLeaderboardRanking } from "../../../support/inMemory/inMemoryLeaderboards.js";
 import {
   InMemoryLiveMatchClosure,
   InMemoryMatchClosureLog,
@@ -23,16 +24,21 @@ import {
 const matchId = randomUUID();
 const alice = randomUUID();
 const bob = randomUUID();
+const season = "2026-S2";
+const mode = "ranked_1v1";
 
 function build() {
   const matches = new InMemoryMatchClosureRepository();
   const live = new InMemoryLiveMatchClosure();
   const log = new InMemoryMatchClosureLog();
+  const leaderboard = new InMemoryLeaderboardRanking();
   const match: MatchClosureRecord = {
     closureId: null,
+    createdAt: new Date("2026-10-01T00:00:00Z"),
     eventId: null,
     id: matchId,
-    mode: "ranked_1v1",
+    leaderboardStatus: "pending",
+    mode,
     players: [
       { enqueuedAt: 1, mmr: 1_500, playerId: alice },
       { enqueuedAt: 2, mmr: 1_520, playerId: bob },
@@ -44,6 +50,7 @@ function build() {
   matches.matches.set(matchId, match);
   matches.ratings.set(alice, 1_500);
   matches.ratings.set(bob, 1_520);
+  matches.regions.set(alice, "LATAM");
   live.live.set(matchId, { closureId: null, players: [alice, bob], status: "in_progress" });
   live.activeMatches.set(alice, matchId);
   live.activeMatches.set(bob, matchId);
@@ -51,7 +58,7 @@ function build() {
     { playerId: alice, points: 1, targetPlayerId: bob, type: "kill" },
     { playerId: alice, points: 10, targetPlayerId: null, type: "objective" },
   );
-  const service = new MatchClosureService(matches, live, log);
+  const service = new MatchClosureService(matches, live, log, leaderboard);
   const app = createApp({
     checkReadiness: async () => true,
     routes: [
@@ -62,7 +69,7 @@ function build() {
     ],
     serviceName: "gaming-app-test",
   });
-  return { app, live, log, matches, service };
+  return { app, leaderboard, live, log, matches, service };
 }
 
 function finish(overrides: Partial<FinishMatchInput> = {}): FinishMatchInput {
@@ -95,6 +102,7 @@ describe("MatchClosureService", () => {
 
     assert.deepEqual(result, {
       closureId: input.closureId,
+      leaderboardStatus: "published",
       matchId,
       playersReleased: true,
       scoringStatus: "applied",
@@ -182,10 +190,83 @@ describe("MatchClosureService", () => {
     assert.equal(context.matches.ratings.get(alice), 1_525);
   });
 
+  it("publishes the season standings once ratings and the final scoreboard are durable", async () => {
+    await context.service.finish(finish());
+
+    assert.deepEqual(context.leaderboard.standing(season, mode, alice), {
+      mmr: 1_525,
+      region: "LATAM",
+      revision: 1,
+    });
+    assert.deepEqual(context.leaderboard.standing(season, mode, bob), {
+      mmr: 1_495,
+      region: "NA",
+      revision: 1,
+    });
+    assert.equal(context.matches.matches.get(matchId)?.leaderboardStatus, "published");
+  });
+
+  it("never publishes the leaderboard ahead of the rating or the final scoreboard", async () => {
+    const input = finish();
+    const result = await withFailure("matchClosure.completeScoring", () =>
+      context.service.finish(input),
+    );
+
+    assert.equal(result.scoringStatus, "failed");
+    assert.equal(result.leaderboardStatus, "pending");
+    assert.equal(context.matches.finalScores.has(matchId), false);
+    assert.equal(context.leaderboard.publications, 0);
+    assert.equal(context.leaderboard.standing(season, mode, alice), undefined);
+  });
+
+  it("keeps scoring applied and retries only the leaderboard when publishing fails", async () => {
+    const input = finish();
+    const result = await withFailure("leaderboard.publish", () => context.service.finish(input));
+
+    assert.equal(result.scoringStatus, "applied");
+    assert.equal(result.leaderboardStatus, "pending");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+    assert.equal(context.leaderboard.standing(season, mode, alice), undefined);
+
+    const retried = await context.service.finish(input);
+    assert.equal(retried.leaderboardStatus, "published");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+    assert.equal(context.leaderboard.standing(season, mode, alice)?.mmr, 1_525);
+
+    const replayed = await context.service.finish(input);
+    assert.equal(replayed.leaderboardStatus, "published");
+    assert.equal(context.leaderboard.publications, 1);
+  });
+
+  it("does not let a late retry regress a newer standing", async () => {
+    context.leaderboard.boards.set(
+      `${season}|${mode}`,
+      new Map([[alice, { mmr: 1_550, region: "LATAM", revision: 2 }]]),
+    );
+    await context.service.finish(finish());
+
+    assert.deepEqual(context.leaderboard.standing(season, mode, alice), {
+      mmr: 1_550,
+      region: "LATAM",
+      revision: 2,
+    });
+  });
+
+  it("skips the leaderboard when the match does not count for a ranked season", async () => {
+    context.matches.leaderboardSeason = null;
+    const result = await context.service.finish(finish());
+
+    assert.equal(result.leaderboardStatus, "not_ranked");
+    assert.equal(context.matches.ratings.get(alice), 1_525);
+    assert.equal(context.leaderboard.publications, 0);
+  });
+
   it("rejects incomplete or foreign results before changing state", async () => {
     await assert.rejects(
       context.service.finish(finish({ results: [{ playerId: alice, result: "win" }] })),
-      { name: "MatchClosureParticipantsError" },
+      {
+        name: "MatchClosureParticipantsError",
+      },
     );
     await assert.rejects(
       context.service.finish(
@@ -203,6 +284,19 @@ describe("MatchClosureService", () => {
 });
 
 describe("match closure API", () => {
+  it("answers 202 while the leaderboard is still pending", async () => {
+    const context = build();
+    const input = finish();
+    const { matchId: _matchId, ...body } = input;
+    const response = await request(context.app)
+      .post(`/matches/${matchId}/finish`)
+      .set("x-fail-at", "leaderboard.publish")
+      .send(body);
+
+    assert.equal(response.status, 202);
+    assert.equal((response.body as { leaderboardStatus: string }).leaderboardStatus, "pending");
+  });
+
   it("validates and closes a match", async () => {
     const context = build();
     const input = finish();

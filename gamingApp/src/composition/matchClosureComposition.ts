@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 import type { Db } from "mongodb";
 
 import type { ModuleRoute } from "../api/app.js";
+import { RedisLeaderboardAdapter } from "../api/modules/leaderboards/infrastructure/adapters/redisLeaderboardAdapter.js";
 import { MatchClosureService } from "../api/modules/matchClosure/business/services/matchClosureService.js";
 import { CassandraMatchClosureAdapter } from "../api/modules/matchClosure/infrastructure/adapters/cassandraMatchClosureAdapter.js";
 import { MongoMatchClosureAdapter } from "../api/modules/matchClosure/infrastructure/adapters/mongoMatchClosureAdapter.js";
@@ -19,6 +20,7 @@ export function createMatchClosureComposition(
     new MongoMatchClosureAdapter(database),
     new RedisMatchClosureAdapter(redis),
     new CassandraMatchClosureAdapter(cassandra),
+    new RedisLeaderboardAdapter(redis),
   );
   return {
     path: "/matches",

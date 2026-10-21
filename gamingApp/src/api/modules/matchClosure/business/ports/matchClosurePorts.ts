@@ -1,5 +1,7 @@
 import type {
+  ApplyRatingInput,
   FinishMatchInput,
+  LeaderboardStanding,
   MatchClosureRecord,
   MatchFinishedEvent,
   PlayerFinalScore,
@@ -22,11 +24,19 @@ export interface MatchClosureRepositoryPort {
     at: Date,
   ): Promise<void>;
   failScoring(matchId: string, closureId: string, message: string, at: Date): Promise<void>;
-  applyRating(
-    playerId: string,
+  /** Season whose leaderboard the match counts for: ranked mode and active season. */
+  findLeaderboardSeason(mode: string, playedAt: Date): Promise<string | null>;
+  /** Applies the rating once per (match, player), with the season standing in the same write. */
+  applyRating(input: ApplyRatingInput): Promise<void>;
+  findStandings(
+    playerIds: readonly string[],
     mode: string,
+    seasonId: string,
+  ): Promise<LeaderboardStanding[]>;
+  markLeaderboard(
     matchId: string,
-    delta: number,
+    closureId: string,
+    status: "published" | "not_ranked",
     at: Date,
   ): Promise<void>;
 }
@@ -44,4 +54,9 @@ export interface LiveMatchClosurePort {
 export interface MatchClosureLogPort {
   appendFinished(event: MatchFinishedEvent): Promise<void>;
   listScoringEvents(matchId: string, limit: number, pageState?: string): Promise<ScoringEventPage>;
+}
+
+/** Season leaderboard (problem 5). Publishing the same or an older standing again is a no-op. */
+export interface MatchLeaderboardPort {
+  publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void>;
 }
