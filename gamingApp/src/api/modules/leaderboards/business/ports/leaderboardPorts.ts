@@ -29,7 +29,15 @@ export interface LeaderboardDirectoryPort {
     seasonId: string,
     mode: string,
   ): Promise<ReadonlyMap<string, PlayerSummary>>;
-  findStandings(playerIds: readonly string[], seasonId: string, mode: string): Promise<LeaderboardStanding[]>;
+  findStandings(
+    playerIds: readonly string[],
+    seasonId: string,
+    mode: string,
+  ): Promise<LeaderboardStanding[]>;
   /** Every standing of the season and mode, in batches. */
-  listStandings(seasonId: string, mode: string, batchSize: number): AsyncIterable<LeaderboardStanding[]>;
+  listStandings(
+    seasonId: string,
+    mode: string,
+    batchSize: number,
+  ): AsyncIterable<LeaderboardStanding[]>;
 }

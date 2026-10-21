@@ -9,7 +9,12 @@ import type {
   RankingWindow,
 } from "../../business/models/leaderboard.js";
 import type { LeaderboardRankingPort } from "../../business/ports/leaderboardPorts.js";
-import { aroundScript, publishScript, removeScript, topScript } from "../scripts/leaderboardScripts.js";
+import {
+  aroundScript,
+  publishScript,
+  removeScript,
+  topScript,
+} from "../scripts/leaderboardScripts.js";
 
 // Bounds the arguments of a single script call; each call is still atomic on its own.
 const writeBatchSize = 500;
@@ -41,25 +46,42 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
   return result;
 }
 
-export class RedisLeaderboardAdapter extends BaseRedisAdapter implements LeaderboardRankingPort, MatchLeaderboardPort {
+export class RedisLeaderboardAdapter
+  extends BaseRedisAdapter
+  implements LeaderboardRankingPort, MatchLeaderboardPort
+{
   top(board: LeaderboardBoard, limit: number): Promise<RankingSlice> {
     return this.run("leaderboard.top", async () => {
-      const [total, rows] = (await this.redis.eval(topScript, 1, boardKey(board), String(limit))) as [number, string[]];
+      const [total, rows] = (await this.redis.eval(
+        topScript,
+        1,
+        boardKey(board),
+        String(limit),
+      )) as [number, string[]];
       return { entries: toRankedPlayers(rows, 0), totalPlayers: total };
     });
   }
 
   around(board: LeaderboardBoard, playerId: string, radius: number): Promise<RankingWindow | null> {
     return this.run("leaderboard.around", async () => {
-      const reply = (await this.redis.eval(aroundScript, 1, boardKey(board), playerId, String(radius))) as
-        [number, number, number, string[]] | null;
+      const reply = (await this.redis.eval(
+        aroundScript,
+        1,
+        boardKey(board),
+        playerId,
+        String(radius),
+      )) as [number, number, number, string[]] | null;
       if (!reply) return null;
       const [rank, first, total, rows] = reply;
       return { entries: toRankedPlayers(rows, first), position: rank + 1, totalPlayers: total };
     });
   }
 
-  publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void> {
+  publish(
+    seasonId: string,
+    mode: string,
+    standings: readonly LeaderboardStanding[],
+  ): Promise<void> {
     return this.run("leaderboard.publish", async () => {
       for (const batch of chunks(standings, writeBatchSize)) {
         await this.redis.eval(

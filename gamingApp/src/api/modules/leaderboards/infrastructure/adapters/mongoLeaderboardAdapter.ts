@@ -32,7 +32,11 @@ function standingPath(seasonId: string, mode: string): string {
   return `seasonRatings.${seasonId}.${mode}`;
 }
 
-function toStanding(player: PlayerDocument, seasonId: string, mode: string): LeaderboardStanding | null {
+function toStanding(
+  player: PlayerDocument,
+  seasonId: string,
+  mode: string,
+): LeaderboardStanding | null {
   const standing = player.seasonRatings?.[seasonId]?.[mode];
   if (!standing) return null;
   return {
@@ -107,19 +111,33 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
     });
   }
 
-  findStandings(playerIds: readonly string[], seasonId: string, mode: string): Promise<LeaderboardStanding[]> {
+  findStandings(
+    playerIds: readonly string[],
+    seasonId: string,
+    mode: string,
+  ): Promise<LeaderboardStanding[]> {
     return this.run("leaderboard.findStandings", async () => {
       if (playerIds.length === 0) return [];
       const players = await this.players
-        .find({ _id: { $in: [...playerIds] } }, { projection: { [standingPath(seasonId, mode)]: 1 } })
+        .find(
+          { _id: { $in: [...playerIds] } },
+          { projection: { [standingPath(seasonId, mode)]: 1 } },
+        )
         .toArray();
       return players.flatMap((player) => toStanding(player, seasonId, mode) ?? []);
     });
   }
 
-  async *listStandings(seasonId: string, mode: string, batchSize: number): AsyncIterable<LeaderboardStanding[]> {
+  async *listStandings(
+    seasonId: string,
+    mode: string,
+    batchSize: number,
+  ): AsyncIterable<LeaderboardStanding[]> {
     const path = standingPath(seasonId, mode);
-    const cursor = this.players.find({ [path]: { $exists: true } }, { batchSize, projection: { [path]: 1 } });
+    const cursor = this.players.find(
+      { [path]: { $exists: true } },
+      { batchSize, projection: { [path]: 1 } },
+    );
     try {
       for (;;) {
         const batch = await this.run("leaderboard.listStandings", async () => {

@@ -90,7 +90,10 @@ describe("LeaderboardService", () => {
   });
 
   it("returns the player with five neighbours above and below", async () => {
-    const position = await context.service.position({ mode, region: null, seasonId: season }, playerId(50));
+    const position = await context.service.position(
+      { mode, region: null, seasonId: season },
+      playerId(50),
+    );
 
     assert.equal(position.player.position, 51);
     assert.deepEqual(
@@ -104,12 +107,18 @@ describe("LeaderboardService", () => {
   });
 
   it("trims the window at the edges of the board", async () => {
-    const first = await context.service.position({ mode, region: null, seasonId: season }, playerId(0));
+    const first = await context.service.position(
+      { mode, region: null, seasonId: season },
+      playerId(0),
+    );
     assert.equal(first.player.position, 1);
     assert.equal(first.above.length, 0);
     assert.equal(first.below.length, 5);
 
-    const last = await context.service.position({ mode, region: null, seasonId: season }, playerId(149));
+    const last = await context.service.position(
+      { mode, region: null, seasonId: season },
+      playerId(149),
+    );
     assert.equal(last.player.position, 150);
     assert.equal(last.above.length, 5);
     assert.equal(last.below.length, 0);
@@ -127,9 +136,12 @@ describe("LeaderboardService", () => {
   });
 
   it("rejects a player who is not in the requested board", async () => {
-    await assert.rejects(context.service.position({ mode, region: "EU", seasonId: season }, playerId(1)), {
-      name: "PlayerNotRankedError",
-    });
+    await assert.rejects(
+      context.service.position({ mode, region: "EU", seasonId: season }, playerId(1)),
+      {
+        name: "PlayerNotRankedError",
+      },
+    );
   });
 
   it("rejects unknown seasons, modes and regions, and unranked modes", async () => {
@@ -142,14 +154,19 @@ describe("LeaderboardService", () => {
     await assert.rejects(context.service.top({ mode, region: "MARS", seasonId: season }), {
       name: "LeaderboardNotFoundError",
     });
-    await assert.rejects(context.service.top({ mode: "casual_5v5", region: null, seasonId: season }), {
-      name: "ModeNotRankedError",
-    });
+    await assert.rejects(
+      context.service.top({ mode: "casual_5v5", region: null, seasonId: season }),
+      {
+        name: "ModeNotRankedError",
+      },
+    );
   });
 
   it("rebuilds the board from the directory and removes players it no longer ranks", async () => {
     context.ranking.boards.clear();
-    await context.ranking.publish(season, mode, [{ mmr: 9_999, playerId: playerId(999), region: "NA", revision: 1 }]);
+    await context.ranking.publish(season, mode, [
+      { mmr: 9_999, playerId: playerId(999), region: "NA", revision: 1 },
+    ]);
 
     const result = await context.service.rebuild(season, mode);
 
@@ -184,7 +201,9 @@ describe("leaderboards API", () => {
   });
 
   it("serves a player's position with neighbours", async () => {
-    const response = await request(context.app).get(`/leaderboards/${mode}/${season}/players/${playerId(10)}`);
+    const response = await request(context.app).get(
+      `/leaderboards/${mode}/${season}/players/${playerId(10)}`,
+    );
 
     assert.equal(response.status, 200);
     const body = response.body as LeaderboardPosition;
@@ -194,7 +213,9 @@ describe("leaderboards API", () => {
   });
 
   it("maps errors to HTTP statuses", async () => {
-    const unranked = await request(context.app).get(`/leaderboards/${mode}/${season}/players/${playerId(500)}`);
+    const unranked = await request(context.app).get(
+      `/leaderboards/${mode}/${season}/players/${playerId(500)}`,
+    );
     assert.equal(unranked.status, 404);
     assert.equal((unranked.body as { error: string }).error, "PLAYER_NOT_RANKED");
 

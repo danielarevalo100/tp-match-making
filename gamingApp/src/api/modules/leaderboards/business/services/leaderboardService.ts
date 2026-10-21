@@ -11,8 +11,15 @@ import {
   type RankedPlayer,
   type SeasonInfo,
 } from "../models/leaderboard.js";
-import { LeaderboardNotFoundError, ModeNotRankedError, PlayerNotRankedError } from "../models/leaderboardErrors.js";
-import type { LeaderboardDirectoryPort, LeaderboardRankingPort } from "../ports/leaderboardPorts.js";
+import {
+  LeaderboardNotFoundError,
+  ModeNotRankedError,
+  PlayerNotRankedError,
+} from "../models/leaderboardErrors.js";
+import type {
+  LeaderboardDirectoryPort,
+  LeaderboardRankingPort,
+} from "../ports/leaderboardPorts.js";
 
 const rebuildBatchSize = 500;
 
@@ -74,7 +81,9 @@ export class LeaderboardService {
     // A player ranked for the first time while the scan was running is in Redis without having
     // been seen: ask MongoDB again before removing anyone.
     const rankedMeanwhile = new Set(
-      (await this.directory.findStandings(unseen, seasonId, mode)).map((standing) => standing.playerId),
+      (await this.directory.findStandings(unseen, seasonId, mode)).map(
+        (standing) => standing.playerId,
+      ),
     );
     const removed = await this.ranking.remove(
       seasonId,
@@ -97,7 +106,11 @@ export class LeaderboardService {
     return season;
   }
 
-  private header(board: LeaderboardBoard, season: SeasonInfo, totalPlayers: number): LeaderboardHeader {
+  private header(
+    board: LeaderboardBoard,
+    season: SeasonInfo,
+    totalPlayers: number,
+  ): LeaderboardHeader {
     return {
       mode: board.mode,
       region: board.region,
@@ -109,7 +122,10 @@ export class LeaderboardService {
   }
 }
 
-function toEntry(entry: RankedPlayer, players: ReadonlyMap<string, PlayerSummary>): LeaderboardEntry {
+function toEntry(
+  entry: RankedPlayer,
+  players: ReadonlyMap<string, PlayerSummary>,
+): LeaderboardEntry {
   const player = players.get(entry.playerId);
   return {
     country: player?.country ?? null,

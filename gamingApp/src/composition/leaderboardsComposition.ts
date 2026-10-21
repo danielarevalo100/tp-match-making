@@ -9,7 +9,10 @@ import { LeaderboardController } from "../api/modules/leaderboards/presentation/
 import { createLeaderboardRouter } from "../api/modules/leaderboards/presentation/routers/leaderboardRouter.js";
 
 export function createLeaderboardsComposition(database: Db, redis: Redis): ModuleRoute {
-  const service = new LeaderboardService(new RedisLeaderboardAdapter(redis), new MongoLeaderboardAdapter(database));
+  const service = new LeaderboardService(
+    new RedisLeaderboardAdapter(redis),
+    new MongoLeaderboardAdapter(database),
+  );
   return {
     path: "/leaderboards",
     router: createLeaderboardRouter(new LeaderboardController(service)),

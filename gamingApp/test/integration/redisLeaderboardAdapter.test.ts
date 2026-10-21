@@ -77,7 +77,9 @@ describe("RedisLeaderboardAdapter (real Redis)", { skip: redisUrl === undefined 
     let window = await leaderboard.around({ mode, region: null, seasonId }, playerId, 0);
     assert.equal(window?.entries[0]?.mmr, 2_000);
 
-    await leaderboard.publish(seasonId, mode, [{ mmr: 2_100, playerId, region: "EU", revision: 2 }]);
+    await leaderboard.publish(seasonId, mode, [
+      { mmr: 2_100, playerId, region: "EU", revision: 2 },
+    ]);
     window = await leaderboard.around({ mode, region: "EU", seasonId }, playerId, 0);
     assert.deepEqual(window?.entries[0], { mmr: 2_100, playerId, position: 1 });
     assert.equal(await leaderboard.around({ mode, region: "NA", seasonId }, playerId, 0), null);

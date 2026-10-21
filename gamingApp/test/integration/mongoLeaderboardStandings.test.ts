@@ -4,7 +4,10 @@ import { after, before, describe, it } from "node:test";
 
 import { MongoLeaderboardAdapter } from "../../src/api/modules/leaderboards/infrastructure/adapters/mongoLeaderboardAdapter.js";
 import { MongoMatchClosureAdapter } from "../../src/api/modules/matchClosure/infrastructure/adapters/mongoMatchClosureAdapter.js";
-import { connectToMongo, type MongoConnection } from "../../src/infrastructure/mongo/mongoConnection.js";
+import {
+  connectToMongo,
+  type MongoConnection,
+} from "../../src/infrastructure/mongo/mongoConnection.js";
 import { mongoCollections } from "../../src/shared/storageKeys.js";
 
 const mongoUri = process.env["MONGODB_URI"];
@@ -47,7 +50,9 @@ describe("MongoDB season standings (real MongoDB)", { skip: mongoUri === undefin
   });
 
   after(async () => {
-    await connection.database.collection(mongoCollections.players).deleteOne({ _id: playerId as never });
+    await connection.database
+      .collection(mongoCollections.players)
+      .deleteOne({ _id: playerId as never });
     await connection.client.close();
   });
 

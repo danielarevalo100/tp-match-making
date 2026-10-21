@@ -23,7 +23,10 @@ function failIfRequested(step: string): void {
 type StoredStanding = { mmr: number; region: string; revision: number };
 
 /** Same order as Redis ZREVRANGE: higher score first, equal scores by descending member. */
-function compareRanked([leftId, left]: [string, StoredStanding], [rightId, right]: [string, StoredStanding]): number {
+function compareRanked(
+  [leftId, left]: [string, StoredStanding],
+  [rightId, right]: [string, StoredStanding],
+): number {
   if (left.mmr !== right.mmr) return right.mmr - left.mmr;
   return leftId < rightId ? 1 : leftId > rightId ? -1 : 0;
 }
@@ -39,7 +42,11 @@ export class InMemoryLeaderboardRanking implements LeaderboardRankingPort, Match
     return { entries: ranked.slice(0, limit), totalPlayers: ranked.length };
   }
 
-  async around(board: LeaderboardBoard, playerId: string, radius: number): Promise<RankingWindow | null> {
+  async around(
+    board: LeaderboardBoard,
+    playerId: string,
+    radius: number,
+  ): Promise<RankingWindow | null> {
     failIfRequested("leaderboard.around");
     const ranked = this.ranked(board);
     const index = ranked.findIndex((entry) => entry.playerId === playerId);
@@ -51,7 +58,11 @@ export class InMemoryLeaderboardRanking implements LeaderboardRankingPort, Match
     };
   }
 
-  async publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void> {
+  async publish(
+    seasonId: string,
+    mode: string,
+    standings: readonly LeaderboardStanding[],
+  ): Promise<void> {
     failIfRequested("leaderboard.publish");
     const board = this.board(seasonId, mode);
     for (const standing of standings) {
@@ -174,12 +185,22 @@ export class InMemoryLeaderboardDirectory implements LeaderboardDirectoryPort {
     return summaries;
   }
 
-  async findStandings(playerIds: readonly string[], seasonId: string, mode: string): Promise<LeaderboardStanding[]> {
+  async findStandings(
+    playerIds: readonly string[],
+    seasonId: string,
+    mode: string,
+  ): Promise<LeaderboardStanding[]> {
     return playerIds.flatMap((playerId) => this.standing(playerId, seasonId, mode) ?? []);
   }
 
-  async *listStandings(seasonId: string, mode: string, batchSize: number): AsyncIterable<LeaderboardStanding[]> {
-    const standings = [...this.players.keys()].flatMap((playerId) => this.standing(playerId, seasonId, mode) ?? []);
+  async *listStandings(
+    seasonId: string,
+    mode: string,
+    batchSize: number,
+  ): AsyncIterable<LeaderboardStanding[]> {
+    const standings = [...this.players.keys()].flatMap(
+      (playerId) => this.standing(playerId, seasonId, mode) ?? [],
+    );
     for (let start = 0; start < standings.length; start += batchSize) {
       yield standings.slice(start, start + batchSize);
     }

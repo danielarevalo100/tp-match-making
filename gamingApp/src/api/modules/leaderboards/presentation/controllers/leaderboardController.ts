@@ -19,7 +19,9 @@ export class LeaderboardController {
   readonly position = async (request: Request, response: Response): Promise<void> => {
     const { mode, playerId, seasonId } = playerPositionParamsSchema.parse(request.params);
     const { region } = leaderboardQuerySchema.parse(request.query);
-    response.json(await this.leaderboards.position({ mode, region: region ?? null, seasonId }, playerId));
+    response.json(
+      await this.leaderboards.position({ mode, region: region ?? null, seasonId }, playerId),
+    );
   };
 
   readonly rebuild = async (request: Request, response: Response): Promise<void> => {
