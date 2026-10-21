@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+**/node_modules
+**/dist
+**/build
+**/target
+**/__pycache__
+*.log
