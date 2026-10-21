@@ -4,6 +4,7 @@ import {
   type DeclaredPlayerResult,
   type FinishMatchInput,
   type FinishMatchResult,
+  type LeaderboardStatus,
   type MatchClosureRecord,
   type PlayerFinalScore,
   type ScoringEvent,
@@ -18,6 +19,7 @@ import type {
   LiveMatchClosurePort,
   MatchClosureLogPort,
   MatchClosureRepositoryPort,
+  MatchLeaderboardPort,
 } from "../ports/matchClosurePorts.js";
 
 const scoringPageSize = 500;
@@ -31,6 +33,7 @@ export class MatchClosureService {
     private readonly matches: MatchClosureRepositoryPort,
     private readonly live: LiveMatchClosurePort,
     private readonly log: MatchClosureLogPort,
+    private readonly leaderboard: MatchLeaderboardPort,
   ) {}
 
   async finish(input: FinishMatchInput): Promise<FinishMatchResult> {
@@ -97,31 +100,70 @@ export class MatchClosureService {
     if (match.closureId !== closureId) {
       throw new MatchClosureConflictError(match.id, match.status);
     }
-    if (match.scoringStatus === "applied") return this.result(match, "applied");
+    if (match.scoringStatus === "applied" && match.leaderboardStatus !== "pending") {
+      return this.result(match, "applied", match.leaderboardStatus);
+    }
 
+    if (match.scoringStatus !== "applied" && !(await this.score(match, closureId))) {
+      return this.result(match, "failed", "pending");
+    }
+    return this.result(match, "applied", await this.publishLeaderboard(match, closureId));
+  }
+
+  /** Applies ratings and the final scoreboard. Returns whether scoring ended up `applied`. */
+  private async score(match: MatchClosureRecord, closureId: string): Promise<boolean> {
     try {
       const scoringStatus = await this.matches.beginScoring(match.id, closureId, new Date());
-      if (scoringStatus === "applied") return this.result(match, "applied");
+      if (scoringStatus === "applied") return true;
+      const seasonId = await this.matches.findLeaderboardSeason(match.mode, match.createdAt);
       const scores = await this.calculateScores(match);
       for (const score of scores) {
-        await this.matches.applyRating(
-          score.playerId,
-          match.mode,
-          match.id,
-          score.ratingDelta,
-          new Date(),
-        );
+        await this.matches.applyRating({
+          at: new Date(),
+          delta: score.ratingDelta,
+          fallbackMmr: score.mmrBefore,
+          matchId: match.id,
+          mode: match.mode,
+          playerId: score.playerId,
+          seasonId,
+        });
       }
       await this.matches.completeScoring(match.id, closureId, scores, new Date());
-      return this.result(match, "applied");
+      return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unspecified scoring failure.";
       await this.matches
         .failScoring(match.id, closureId, message, new Date())
         .catch(() => undefined);
       const current = await this.matches.find(match.id).catch(() => null);
-      if (current?.scoringStatus === "applied") return this.result(current, "applied");
-      return this.result(match, "failed");
+      return current?.scoringStatus === "applied";
+    }
+  }
+
+  /**
+   * Last step, after ratings and the final scoreboard are durable in MongoDB, so a failure can
+   * only leave the leaderboard behind them, never ahead. It republishes what MongoDB holds now,
+   * so a retry, or a newer match of the same player published first, cannot regress a standing.
+   */
+  private async publishLeaderboard(
+    match: MatchClosureRecord,
+    closureId: string,
+  ): Promise<LeaderboardStatus> {
+    try {
+      const seasonId = await this.matches.findLeaderboardSeason(match.mode, match.createdAt);
+      if (seasonId) {
+        const standings = await this.matches.findStandings(
+          match.players.map((player) => player.playerId),
+          match.mode,
+          seasonId,
+        );
+        await this.leaderboard.publish(seasonId, match.mode, standings);
+      }
+      const status = seasonId ? "published" : "not_ranked";
+      await this.matches.markLeaderboard(match.id, closureId, status, new Date());
+      return status;
+    } catch {
+      return "pending";
     }
   }
 
@@ -208,9 +250,11 @@ export class MatchClosureService {
   private result(
     match: MatchClosureRecord,
     scoringStatus: "applied" | "failed",
+    leaderboardStatus: LeaderboardStatus,
   ): FinishMatchResult {
     return {
       closureId: match.closureId ?? "",
+      leaderboardStatus,
       matchId: match.id,
       playersReleased: true,
       scoringStatus,

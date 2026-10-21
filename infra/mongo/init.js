@@ -272,6 +272,29 @@ ensureCollection("players", {
       uniqueItems: true,
       items: { bsonType: "string" },
     },
+    // Leaderboard standing per season and mode (problem 5), written by problem 4 in the same
+    // update as `ratings`: seasonRatings.<seasonId>.<modeId>. `mmr` is the mode rating after the
+    // player's last match of that season, `region` the player's region at that moment and
+    // `revision` grows on every change so Redis can ignore stale writes.
+    seasonRatings: {
+      bsonType: "object",
+      description: "Leaderboard standing per season, then per game mode",
+      additionalProperties: {
+        bsonType: "object",
+        additionalProperties: {
+          bsonType: "object",
+          required: ["mmr", "gamesPlayed", "region", "revision", "updatedAt"],
+          additionalProperties: false,
+          properties: {
+            mmr: { bsonType: NUMBER },
+            gamesPlayed: { bsonType: INTEGER, minimum: 1 },
+            region: { bsonType: "string" },
+            revision: { bsonType: INTEGER, minimum: 1 },
+            updatedAt: { bsonType: "date" },
+          },
+        },
+      },
+    },
   },
 });
 
@@ -456,6 +479,16 @@ gamingDb.schema_metadata.updateOne(
   {
     $setOnInsert: {
       description: "Idempotent match closure and eventual rating adjustments",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 6 },
+  {
+    $setOnInsert: {
+      description: "Season leaderboard standings per player and leaderboard publication per match",
       appliedAt: new Date(),
     },
   },

@@ -131,12 +131,12 @@ Fault injection steps: `matchmaking.findPlayer`, `matchmaking.findActiveMode`, `
 
 In-match events and live scoreboard (problem 3). Events are appended to Cassandra (`events_by_match`) and applied to a scoreboard in Redis; both are written for every event, log first. See [`docs/problema3.md`](../docs/problema3.md).
 
-| Method | Path                                       | Purpose                                              |
-| ------ | ------------------------------------------ | ---------------------------------------------------- |
-| `POST` | `/matches/:matchId/events`                 | Record an event (idempotent by `eventId`)            |
-| `GET`  | `/matches/:matchId/events`                 | Read the log in time order (`fromTsMs`, `toTsMs`, `limit`, `pageState`) |
-| `GET`  | `/matches/:matchId/scoreboard`             | Live scoreboard                                      |
-| `POST` | `/matches/:matchId/scoreboard/reconcile`   | Apply to the scoreboard any logged event it is missing |
+| Method | Path                                     | Purpose                                                                 |
+| ------ | ---------------------------------------- | ----------------------------------------------------------------------- |
+| `POST` | `/matches/:matchId/events`               | Record an event (idempotent by `eventId`)                               |
+| `GET`  | `/matches/:matchId/events`               | Read the log in time order (`fromTsMs`, `toTsMs`, `limit`, `pageState`) |
+| `GET`  | `/matches/:matchId/scoreboard`           | Live scoreboard                                                         |
+| `POST` | `/matches/:matchId/scoreboard/reconcile` | Apply to the scoreboard any logged event it is missing                  |
 
 Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `matchEvents.applyScoreboard`, `matchEvents.listEvents`, `matchEvents.findScoreboard`.
 
@@ -144,19 +144,35 @@ Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `
 
 Match closure and eventual scoring (problem 4). The workflow prepares `closing` in Redis and MongoDB, commits the immutable `match_finished` event in Cassandra, releases players atomically, and then rebuilds the authoritative score from Cassandra. See [`docs/problema4.md`](../docs/problema4.md).
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
+| Method | Path                       | Purpose                                                 |
+| ------ | -------------------------- | ------------------------------------------------------- |
 | `POST` | `/matches/:matchId/finish` | Idempotently close, release players and attempt scoring |
 
 Lifecycle and scoring are independent: a response may contain `status=closed`, `playersReleased=true`, and `scoringStatus=failed`. Repeating the same payload retries scoring without duplicating the fixed rating delta (`win +25`, `loss -25`, `draw 0`).
 
-Fault injection steps: `matchClosure.findMatch`, `matchClosure.beginClosing`, `matchClosure.prepareMongo`, `matchClosure.appendFinished`, `matchClosure.releasePlayers`, `matchClosure.markClosed`, `matchClosure.beginScoring`, `matchClosure.listEvents`, `matchClosure.applyRating`, `matchClosure.completeScoring`.
+After scoring is `applied`, the match's season standings are published to the Redis leaderboard (problem 5) as the last step, so the leaderboard can lag behind the rating but never get ahead of it. `leaderboardStatus` is `published`, `not_ranked` (unranked mode or no active season) or `pending`; the response is `200` only when scoring is applied and the leaderboard is not pending, otherwise `202`.
+
+Fault injection steps: `matchClosure.findMatch`, `matchClosure.beginClosing`, `matchClosure.prepareMongo`, `matchClosure.appendFinished`, `matchClosure.releasePlayers`, `matchClosure.markClosed`, `matchClosure.beginScoring`, `matchClosure.findLeaderboardSeason`, `matchClosure.listEvents`, `matchClosure.applyRating`, `matchClosure.completeScoring`, `matchClosure.findStandings`, `leaderboard.publish`, `matchClosure.markLeaderboard`.
+
+### leaderboards
+
+Leaderboard queries (problem 5). Redis sorted sets hold the order and positions per season, mode and scope; MongoDB validates the season, mode and region and adds usernames, countries and season games. See [`docs/problema5.md`](../docs/problema5.md).
+
+| Method | Path                                                           | Purpose                                                                            |
+| ------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET`  | `/leaderboards/:mode/:seasonId?region=LATAM`                   | Top 100, global or regional                                                        |
+| `GET`  | `/leaderboards/:mode/:seasonId/players/:playerId?region=LATAM` | Player position with five players above and below                                  |
+| `POST` | `/leaderboards/:mode/:seasonId/rebuild`                        | Republish every MongoDB standing to Redis and drop members MongoDB no longer ranks |
+
+Errors: `LEADERBOARD_NOT_FOUND` (404, unknown season, mode or region), `MODE_NOT_RANKED` (422), `PLAYER_NOT_RANKED` (404).
+
+Fault injection steps: `leaderboard.findSeason`, `leaderboard.findMode`, `leaderboard.findRegion`, `leaderboard.top`, `leaderboard.around`, `leaderboard.findPlayers`, `leaderboard.listStandings`, `leaderboard.findStandings`, `leaderboard.listMembers`, `leaderboard.remove`, `leaderboard.publish`.
 
 ## Shared endpoints
 
-| Method | Path      | Purpose                     |
-| ------ | --------- | --------------------------- |
-| `GET`  | `/health` | Process liveness            |
+| Method | Path      | Purpose                                |
+| ------ | --------- | -------------------------------------- |
+| `GET`  | `/health` | Process liveness                       |
 | `GET`  | `/ready`  | MongoDB, Cassandra and Redis readiness |
 
 ## Local development
@@ -193,10 +209,10 @@ pnpm test
 pnpm build
 ```
 
-The integration tests in `test/integration` are skipped unless `REDIS_URL` is set (the match events ones also need `CASSANDRA_CONTACT_POINTS`). They use throwaway keys and rows and clean up after themselves:
+The integration tests in `test/integration` are skipped unless `REDIS_URL` is set (the match events ones also need `CASSANDRA_CONTACT_POINTS`, and the MongoDB standings ones need `MONGODB_URI` with the schema applied). They use throwaway keys and rows and clean up after themselves:
 
 ```bash
-REDIS_URL=redis://127.0.0.1:6379 CASSANDRA_CONTACT_POINTS=127.0.0.1 pnpm test
+REDIS_URL=redis://127.0.0.1:6379 CASSANDRA_CONTACT_POINTS=127.0.0.1 MONGODB_URI="mongodb://gaming_admin:change_me_local_only@127.0.0.1:27017/?authSource=admin" pnpm test
 ```
 
 `pnpm lint:fix` and `pnpm format` apply automatic fixes. ESLint uses `typescript-eslint` with type-checked rules and `eslint-config-prettier`, so formatting is left to Prettier.
@@ -208,6 +224,8 @@ REDIS_URL=redis://127.0.0.1:6379 CASSANDRA_CONTACT_POINTS=127.0.0.1 pnpm test
 If player registration fails with "Document failed validation", the MongoDB volume was created with an older schema: reapply it with `scripts/initialize-infrastructure.sh` (or `.ps1`).
 
 `scripts/demo-problem-3.mjs` simulates 100 simultaneous matches (`node scripts/demo-problem-3.mjs`), checks the scoreboards and the Cassandra log, and provokes the failure scenarios. See `docs/problema3.md`.
+
+`scripts/demo-problem-5.mjs` seeds 50,000 ranked players into MongoDB, rebuilds the Redis leaderboards, checks the top 100 and a player's neighbours against MongoDB, measures latency, compares Redis `ZREVRANK` with a MongoDB count, and simulates losing the Redis boards (`node scripts/demo-problem-5.mjs`). It uses the drivers installed in `gamingApp`. See `docs/problema5.md`.
 
 ## Example registration
 

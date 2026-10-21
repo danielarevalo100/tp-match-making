@@ -3,6 +3,11 @@ import { ZodError } from "zod";
 
 import { InjectedFailureError, StorageError } from "../shared/errors.js";
 import {
+  LeaderboardNotFoundError,
+  ModeNotRankedError,
+  PlayerNotRankedError,
+} from "./modules/leaderboards/business/models/leaderboardErrors.js";
+import {
   MatchCloseUnavailableError,
   MatchClosureConflictError,
   MatchClosureParticipantsError,
@@ -154,6 +159,30 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   if (error instanceof PlayerNotInMatchError) {
     response.status(422).json({
       error: "PLAYER_NOT_IN_MATCH",
+      message: error.message,
+      playerId: error.playerId,
+    });
+    return;
+  }
+
+  if (error instanceof LeaderboardNotFoundError) {
+    response.status(404).json({
+      error: "LEADERBOARD_NOT_FOUND",
+      id: error.id,
+      message: error.message,
+      missing: error.missing,
+    });
+    return;
+  }
+
+  if (error instanceof ModeNotRankedError) {
+    response.status(422).json({ error: "MODE_NOT_RANKED", message: error.message });
+    return;
+  }
+
+  if (error instanceof PlayerNotRankedError) {
+    response.status(404).json({
+      error: "PLAYER_NOT_RANKED",
       message: error.message,
       playerId: error.playerId,
     });

@@ -10,6 +10,7 @@ export class MatchClosureController {
     const { matchId } = finishMatchParamsSchema.parse(request.params);
     const body = finishMatchSchema.parse(request.body as unknown);
     const result = await this.closure.finish({ matchId, ...body });
-    response.status(result.scoringStatus === "applied" ? 200 : 202).json(result);
+    const complete = result.scoringStatus === "applied" && result.leaderboardStatus !== "pending";
+    response.status(complete ? 200 : 202).json(result);
   };
 }

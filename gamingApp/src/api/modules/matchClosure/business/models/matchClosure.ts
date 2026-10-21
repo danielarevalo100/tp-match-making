@@ -10,6 +10,14 @@ export const scoringStatuses = [
 ] as const;
 export type ScoringStatus = (typeof scoringStatuses)[number];
 
+/**
+ * Publication of the match's rating changes to the season leaderboard (problem 5). It only
+ * starts once scoring is `applied`, so a leaderboard never shows a rating that MongoDB or the
+ * final scoreboard do not have yet.
+ */
+export const leaderboardStatuses = ["pending", "published", "not_ranked"] as const;
+export type LeaderboardStatus = (typeof leaderboardStatuses)[number];
+
 export const finishReasons = ["normal", "forfeit", "administrative"] as const;
 export type FinishReason = (typeof finishReasons)[number];
 
@@ -29,8 +37,11 @@ export type MatchParticipant = {
 
 export type MatchClosureRecord = {
   closureId: string | null;
+  /** When problem 2 formed the match; decides the season the match counts for. */
+  createdAt: Date;
   eventId: string | null;
   id: string;
+  leaderboardStatus: LeaderboardStatus;
   mode: string;
   players: readonly MatchParticipant[];
   results: readonly DeclaredPlayerResult[] | null;
@@ -68,6 +79,7 @@ export type PlayerFinalScore = {
 
 export type FinishMatchResult = {
   closureId: string;
+  leaderboardStatus: LeaderboardStatus;
   matchId: string;
   playersReleased: true;
   scoringStatus: ScoringStatus;
@@ -84,6 +96,27 @@ export type ScoringEvent = {
 export type ScoringEventPage = {
   events: readonly ScoringEvent[];
   nextPageState: string | null;
+};
+
+export type ApplyRatingInput = {
+  at: Date;
+  delta: number;
+  /** Rating to start from when the player has none for the mode yet (the match snapshot). */
+  fallbackMmr: number;
+  matchId: string;
+  mode: string;
+  playerId: string;
+  /** Season whose leaderboard standing is updated too, or null when the match is not ranked. */
+  seasonId: string | null;
+};
+
+/** A player's place in a season leaderboard, as stored in MongoDB. */
+export type LeaderboardStanding = {
+  mmr: number;
+  playerId: string;
+  region: string;
+  /** Grows on every change, so an older standing never overwrites a newer one. */
+  revision: number;
 };
 
 export const ratingDeltaByResult: Readonly<Record<PlayerResult, number>> = {
