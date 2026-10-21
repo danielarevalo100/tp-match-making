@@ -619,7 +619,8 @@ gamingDb.schema_metadata.updateOne(
   { version: 6 },
   {
     $setOnInsert: {
-      description: "Season leaderboard standings per player and leaderboard publication per match",
+      description:
+        "Season leaderboard standings per player and leaderboard publication per match",
       appliedAt: new Date(),
     },
   },
@@ -629,7 +630,8 @@ gamingDb.schema_metadata.updateOne(
   { version: 7 },
   {
     $setOnInsert: {
-      description: "Index of reports by creation date for irregular behavior detection",
+      description:
+        "Index of reports by creation date for irregular behavior detection",
       appliedAt: new Date(),
     },
   },
