@@ -42,7 +42,9 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 | `match:{matchId}:closure` | HASH | Short-lived receipt of a completed release: `closureId`, `status=released`, `releasedAt`. Protects an idempotent retry from touching a player's newer match. | problem 4 | 24 hours |
 | `lb:{seasonId}:{mode}:global` | ZSET | Season leaderboard: `playerId` scored by MMR. Position = `ZREVRANK` + 1 (equal MMR ordered by descending `playerId`). | problem 4 (publish after scoring), problem 5 rebuild | none |
 | `lb:{seasonId}:{mode}:region:{region}` | ZSET | Same board restricted to one region. | problem 4, problem 5 rebuild | none |
-| `lb:{seasonId}:{mode}:members` | HASH | `playerId` → `"{revision}\|{region}"`: last published revision (older publications are ignored) and the regional board that holds the player (a region change moves them). | problem 4, problem 5 rebuild | none |
+| `lb:{seasonId}:{mode}:members` | HASH | `playerId` → `"{revision}\|{region}"`: last published revision (older publications are ignored) and the regional board that holds the player (a region change moves them). `"{revision}\|"` (empty region) is the tombstone problem 8 leaves for a player it removed. | problem 4, problem 5 rebuild, problem 8 | none |
+| `lb:{seasonId}:{mode}:holds` | SET | `{sanctionId}\|{playerId}` for each player a sanction reversal holds in this board. Makes the hold idempotent. | problem 8 (hold and release) | removed on release |
+| `lb:{seasonId}:{mode}:held` | HASH | `playerId` → number of reversals holding it. While it is present, publications (problem 4) and rebuild removals (problem 5) skip the player. | problem 8 | field removed when the count reaches 0 |
 
 ### Problem 2: match formation saga
 
@@ -67,6 +69,10 @@ Problem 1 joins a queue with one atomic Lua script (`gamingApp/src/api/modules/m
 ### Problem 4: match closure
 
 `POST /matches/:matchId/finish` prepares `closing`, appends the irreversible `match_finished` event to Cassandra, then atomically releases every matching `active_match` and removes the live Redis keys. `match:{id}:closure` is retained for 24 hours so a lost response can be retried without deleting a newer `active_match`. The final score is rebuilt from Cassandra and ratings are eventually applied in MongoDB. Details and the rollback boundary are in `docs/problema4.md`.
+
+### Problem 8: sanction with result reversal
+
+`POST /sanctions` removes the sanctioned player from the queue with the same `leaveScript` as problem 1, then holds every participant of the voided matches in each affected board (`holdScript`) before any rating is reverted in MongoDB. While held, `publishScript` and `removeScript` skip them, so the boards keep showing the state from before the sanction. When every match is reverted, `releaseScript` drops the hold and writes each held player's current standing in one call per board: published, removed (no games left in the season, with a tombstone) or only released. A reader therefore sees the whole reversal of a board or none of it. Details in `docs/problema8.md`.
 
 ## Future additions
 

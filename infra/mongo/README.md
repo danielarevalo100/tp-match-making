@@ -14,7 +14,7 @@ MongoDB is the source of truth for durable domain data that is read in many diff
 | `players`        | UUID string         | Profile, normalized username/email, `country`, derived `region`, `ratings` per mode | `username`, `email` unique; `region`                    |
 | `administrators` | UUID string         | Platform administrators                                                             | `username`, `email` unique                              |
 | `reports`        | UUID string         | Reports; `reporterPlayerId: null` = automatic                                       | `reportedPlayerId + createdAt`; `status + createdAt`    |
-| `sanctions`      | UUID string         | Sanctions; `endsAt: null` = permanent                                               | `playerId + status + endsAt`                            |
+| `sanctions`      | UUID string         | Sanctions; `endsAt: null` = permanent; `matchIds` and `reversal` journal (problem 8) | `playerId + status + endsAt`; `playerId + createdAt`    |
 
 ## Modeling decisions
 
@@ -26,6 +26,7 @@ MongoDB is the source of truth for durable domain data that is read in many diff
 - **Profile audit:** `updatedAt` is initialized from `registeredAt` for existing records and changes whenever the profile or account status changes.
 - **Sanctions vs. account status:** `accountStatus` only describes the account lifecycle (`active`, `inactive`, `closed`). Only the `sanctions` collection says whether a player is sanctioned. This avoids duplicating that fact and having to keep two copies in sync.
 - **Sanction in force:** `status: "active"`, `startsAt <= now` and (`endsAt: null` or `endsAt > now`). Every sanction type blocks matchmaking.
+- **Sanction with result reversal** (problem 8, schema v8): `sanctions.matchIds` lists the matches whose results are voided and `sanctions.reversal` is the journal of that reversal (`status`, `completedSteps`, `heldBoards`, `revertedMatchIds`, `attempts`, `lastError`). Sanction and journal are one document, so registering the sanction and starting the journal is a single atomic write. A voided match gets `status: "voided"` and `voided: { sanctionId, at }`; `players.revertedRatingMatches` is the idempotency guard of the reversal (the mirror of `appliedRatingMatches`), and a season standing can reach `gamesPlayed: 0`, which means it is no longer ranked. Reapply the schema on existing volumes. See `docs/problema8.md`.
 
 Example check used by problem 1:
 

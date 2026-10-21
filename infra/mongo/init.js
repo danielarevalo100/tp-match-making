@@ -348,10 +348,21 @@ ensureCollection("players", {
       uniqueItems: true,
       items: { bsonType: "string" },
     },
+    // Problem 8: voided matches whose rating adjustment was already taken back. Same role as
+    // appliedRatingMatches: the guard that makes the reversal idempotent per (match, player).
+    revertedRatingMatches: {
+      bsonType: "array",
+      description:
+        "Voided match ids whose rating adjustment was already reverted",
+      uniqueItems: true,
+      items: { bsonType: "string" },
+    },
     // Leaderboard standing per season and mode (problem 5), written by problem 4 in the same
     // update as `ratings`: seasonRatings.<seasonId>.<modeId>. `mmr` is the mode rating after the
     // player's last match of that season, `region` the player's region at that moment and
-    // `revision` grows on every change so Redis can ignore stale writes.
+    // `revision` grows on every change so Redis can ignore stale writes. `gamesPlayed` can drop
+    // to 0 when problem 8 voids every match the player had in the season: the standing is kept
+    // (so `revision` keeps growing) but it is no longer ranked.
     seasonRatings: {
       bsonType: "object",
       description: "Leaderboard standing per season, then per game mode",
@@ -363,7 +374,7 @@ ensureCollection("players", {
           additionalProperties: false,
           properties: {
             mmr: { bsonType: NUMBER },
-            gamesPlayed: { bsonType: INTEGER, minimum: 1 },
+            gamesPlayed: { bsonType: INTEGER, minimum: 0 },
             region: { bsonType: "string" },
             revision: { bsonType: INTEGER, minimum: 1 },
             updatedAt: { bsonType: "date" },
@@ -507,6 +518,58 @@ ensureCollection("sanctions", {
     endsAt: { bsonType: ["date", "null"], description: "null = permanent" },
     status: { enum: ["active", "expired", "revoked"] },
     createdAt: { bsonType: "date" },
+    // Problem 8: matches whose results the sanction voids, and the journal of that reversal.
+    // The sanction is in force as soon as it is inserted; the reversal only moves forward and
+    // records each finished step, so after a crash it is clear what is left to complete.
+    matchIds: {
+      bsonType: "array",
+      uniqueItems: true,
+      items: { bsonType: "string" },
+    },
+    reversal: {
+      bsonType: "object",
+      required: [
+        "status",
+        "attempts",
+        "completedSteps",
+        "heldBoards",
+        "revertedMatchIds",
+        "lastError",
+        "updatedAt",
+        "completedAt",
+      ],
+      additionalProperties: false,
+      properties: {
+        status: { enum: ["pending", "reverting", "completed", "failed"] },
+        attempts: { bsonType: INTEGER, minimum: 0 },
+        completedSteps: {
+          bsonType: "array",
+          uniqueItems: true,
+          items: { enum: ["queue", "hold", "leaderboard"] },
+        },
+        heldBoards: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            required: ["seasonId", "mode", "playerIds"],
+            additionalProperties: false,
+            properties: {
+              seasonId: { bsonType: "string" },
+              mode: { bsonType: "string" },
+              playerIds: { bsonType: "array", items: { bsonType: "string" } },
+            },
+          },
+        },
+        revertedMatchIds: {
+          bsonType: "array",
+          uniqueItems: true,
+          items: { bsonType: "string" },
+        },
+        lastError: { bsonType: ["string", "null"] },
+        updatedAt: { bsonType: "date" },
+        completedAt: { bsonType: ["date", "null"] },
+      },
+    },
   },
 });
 
@@ -519,7 +582,8 @@ gamingDb.sanctions.createIndex({ reportId: 1 }, { sparse: true });
 // matches (problem 2)
 // Durable record of a match created by the formation saga. `_id` is the shared
 // matchId (also the Redis key suffix and the Cassandra partition later), so
-// retrying the creation never duplicates it. Problem 4 closes it.
+// retrying the creation never duplicates it. Problem 4 closes it. Problem 8
+// moves it from closed to voided and records `voided: { sanctionId, at }`.
 // ---------------------------------------------------------------------------
 
 ensureCollection("matches", {
@@ -632,6 +696,17 @@ gamingDb.schema_metadata.updateOne(
     $setOnInsert: {
       description:
         "Index of reports by creation date for irregular behavior detection",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 8 },
+  {
+    $setOnInsert: {
+      description:
+        "Sanction with result reversal: reversal journal, reverted ratings and unranked standings",
       appliedAt: new Date(),
     },
   },

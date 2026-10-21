@@ -1,6 +1,8 @@
 import { BaseRedisAdapter } from "../../../../../infrastructure/redis/baseRedisAdapter.js";
 import { redisKeys } from "../../../../../shared/storageKeys.js";
 import type { MatchLeaderboardPort } from "../../../matchClosure/business/ports/matchClosurePorts.js";
+import type { HeldStanding } from "../../../sanctions/business/models/sanction.js";
+import type { ReversalLeaderboardPort } from "../../../sanctions/business/ports/sanctionPorts.js";
 import type {
   LeaderboardBoard,
   LeaderboardStanding,
@@ -11,7 +13,9 @@ import type {
 import type { LeaderboardRankingPort } from "../../business/ports/leaderboardPorts.js";
 import {
   aroundScript,
+  holdScript,
   publishScript,
+  releaseScript,
   removeScript,
   topScript,
 } from "../scripts/leaderboardScripts.js";
@@ -46,9 +50,15 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
   return result;
 }
 
+/** What the release script does with a held player (see `releaseScript`). */
+function releaseAction(entry: HeldStanding): "publish" | "release" | "remove" {
+  if (!entry.standing) return "release";
+  return entry.standing.gamesPlayed > 0 ? "publish" : "remove";
+}
+
 export class RedisLeaderboardAdapter
   extends BaseRedisAdapter
-  implements LeaderboardRankingPort, MatchLeaderboardPort
+  implements LeaderboardRankingPort, MatchLeaderboardPort, ReversalLeaderboardPort
 {
   top(board: LeaderboardBoard, limit: number): Promise<RankingSlice> {
     return this.run("leaderboard.top", async () => {
@@ -86,9 +96,10 @@ export class RedisLeaderboardAdapter
       for (const batch of chunks(standings, writeBatchSize)) {
         await this.redis.eval(
           publishScript,
-          2,
+          3,
           redisKeys.leaderboardGlobal(seasonId, mode),
           redisKeys.leaderboardMembers(seasonId, mode),
+          redisKeys.leaderboardHeld(seasonId, mode),
           redisKeys.leaderboardRegionPrefix(seasonId, mode),
           ...batch.flatMap((standing) => [
             standing.playerId,
@@ -128,15 +139,68 @@ export class RedisLeaderboardAdapter
         removed += Number(
           await this.redis.eval(
             removeScript,
-            2,
+            3,
             redisKeys.leaderboardGlobal(seasonId, mode),
             redisKeys.leaderboardMembers(seasonId, mode),
+            redisKeys.leaderboardHeld(seasonId, mode),
             redisKeys.leaderboardRegionPrefix(seasonId, mode),
             ...batch,
           ),
         );
       }
       return removed;
+    });
+  }
+
+  /** Problem 8: from now on publications skip these players until `release` (idempotent). */
+  hold(
+    seasonId: string,
+    mode: string,
+    holdId: string,
+    playerIds: readonly string[],
+  ): Promise<void> {
+    return this.run("leaderboard.hold", async () => {
+      if (playerIds.length === 0) return;
+      await this.redis.eval(
+        holdScript,
+        2,
+        redisKeys.leaderboardHolds(seasonId, mode),
+        redisKeys.leaderboardHeld(seasonId, mode),
+        holdId,
+        ...playerIds,
+      );
+    });
+  }
+
+  /**
+   * Problem 8: drops the hold and writes every held player's current standing. A single script
+   * call for the whole board, never batched, so a reader cannot see part of a reversal.
+   */
+  release(
+    seasonId: string,
+    mode: string,
+    holdId: string,
+    entries: readonly HeldStanding[],
+  ): Promise<void> {
+    return this.run("leaderboard.release", async () => {
+      if (entries.length === 0) return;
+      await this.redis.eval(
+        releaseScript,
+        4,
+        redisKeys.leaderboardGlobal(seasonId, mode),
+        redisKeys.leaderboardMembers(seasonId, mode),
+        redisKeys.leaderboardHolds(seasonId, mode),
+        redisKeys.leaderboardHeld(seasonId, mode),
+        redisKeys.leaderboardRegionPrefix(seasonId, mode),
+        holdId,
+        ...entries.flatMap((entry) => [
+          entry.playerId,
+          String(entry.standing?.mmr ?? 0),
+          entry.standing?.region ?? "",
+          String(entry.standing?.revision ?? 0),
+          releaseAction(entry),
+        ]),
+      );
     });
   }
 }

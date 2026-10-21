@@ -38,7 +38,8 @@ function toStanding(
   mode: string,
 ): LeaderboardStanding | null {
   const standing = player.seasonRatings?.[seasonId]?.[mode];
-  if (!standing) return null;
+  // A standing with no games left (problem 8 voided every match of the season) is not ranked.
+  if (!standing || standing.gamesPlayed < 1) return null;
   return {
     mmr: standing.mmr,
     playerId: player._id,
@@ -135,7 +136,7 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
   ): AsyncIterable<LeaderboardStanding[]> {
     const path = standingPath(seasonId, mode);
     const cursor = this.players.find(
-      { [path]: { $exists: true } },
+      { [`${path}.gamesPlayed`]: { $gte: 1 } },
       { batchSize, projection: { [path]: 1 } },
     );
     try {

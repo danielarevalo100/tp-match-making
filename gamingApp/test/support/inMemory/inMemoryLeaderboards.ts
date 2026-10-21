@@ -13,6 +13,8 @@ import type {
   LeaderboardRankingPort,
 } from "../../../src/api/modules/leaderboards/business/ports/leaderboardPorts.js";
 import type { MatchLeaderboardPort } from "../../../src/api/modules/matchClosure/business/ports/matchClosurePorts.js";
+import type { HeldStanding } from "../../../src/api/modules/sanctions/business/models/sanction.js";
+import type { ReversalLeaderboardPort } from "../../../src/api/modules/sanctions/business/ports/sanctionPorts.js";
 import { InjectedFailureError } from "../../../src/shared/errors.js";
 import { requestContext } from "../../../src/shared/requestContext.js";
 
@@ -31,10 +33,18 @@ function compareRanked(
   return leftId < rightId ? 1 : leftId > rightId ? -1 : 0;
 }
 
-export class InMemoryLeaderboardRanking implements LeaderboardRankingPort, MatchLeaderboardPort {
+export class InMemoryLeaderboardRanking
+  implements LeaderboardRankingPort, MatchLeaderboardPort, ReversalLeaderboardPort
+{
   /** Boards by `${seasonId}|${mode}`, each with every ranked player of the season and mode. */
   readonly boards = new Map<string, Map<string, StoredStanding>>();
+  /** Problem 8, by board: `${holdId}|${playerId}` and how many holds each player has. */
+  readonly holds = new Map<string, Set<string>>();
+  readonly held = new Map<string, Map<string, number>>();
+  /** Revision of players a reversal removed (the Redis tombstone), by board. */
+  readonly tombstones = new Map<string, Map<string, number>>();
   publications = 0;
+  releases = 0;
 
   async top(board: LeaderboardBoard, limit: number): Promise<RankingSlice> {
     failIfRequested("leaderboard.top");
@@ -64,15 +74,11 @@ export class InMemoryLeaderboardRanking implements LeaderboardRankingPort, Match
     standings: readonly LeaderboardStanding[],
   ): Promise<void> {
     failIfRequested("leaderboard.publish");
-    const board = this.board(seasonId, mode);
+    const key = `${seasonId}|${mode}`;
     for (const standing of standings) {
-      const stored = board.get(standing.playerId);
-      if (stored && stored.revision > standing.revision) continue;
-      board.set(standing.playerId, {
-        mmr: standing.mmr,
-        region: standing.region,
-        revision: standing.revision,
-      });
+      if (this.isHeld(key, standing.playerId)) continue;
+      if (this.storedRevision(key, standing.playerId) > standing.revision) continue;
+      this.write(key, standing.playerId, standing);
     }
     this.publications += 1;
   }
@@ -82,8 +88,90 @@ export class InMemoryLeaderboardRanking implements LeaderboardRankingPort, Match
   }
 
   async remove(seasonId: string, mode: string, playerIds: readonly string[]): Promise<number> {
+    const key = `${seasonId}|${mode}`;
     const board = this.board(seasonId, mode);
-    return playerIds.filter((playerId) => board.delete(playerId)).length;
+    return playerIds.filter((playerId) => {
+      if (this.isHeld(key, playerId)) return false;
+      this.tombstones.get(key)?.delete(playerId);
+      return board.delete(playerId);
+    }).length;
+  }
+
+  async hold(
+    seasonId: string,
+    mode: string,
+    holdId: string,
+    playerIds: readonly string[],
+  ): Promise<void> {
+    failIfRequested("leaderboard.hold");
+    const key = `${seasonId}|${mode}`;
+    const holds = this.holds.get(key) ?? new Set<string>();
+    const held = this.held.get(key) ?? new Map<string, number>();
+    for (const playerId of playerIds) {
+      const member = `${holdId}|${playerId}`;
+      if (holds.has(member)) continue;
+      holds.add(member);
+      held.set(playerId, (held.get(playerId) ?? 0) + 1);
+    }
+    this.holds.set(key, holds);
+    this.held.set(key, held);
+  }
+
+  async release(
+    seasonId: string,
+    mode: string,
+    holdId: string,
+    entries: readonly HeldStanding[],
+  ): Promise<void> {
+    failIfRequested("leaderboard.release");
+    const key = `${seasonId}|${mode}`;
+    for (const entry of entries) {
+      if (this.holds.get(key)?.delete(`${holdId}|${entry.playerId}`)) {
+        const held = this.held.get(key);
+        const count = (held?.get(entry.playerId) ?? 1) - 1;
+        if (count <= 0) held?.delete(entry.playerId);
+        else held?.set(entry.playerId, count);
+      }
+      const standing = entry.standing;
+      if (!standing || this.isHeld(key, entry.playerId)) continue;
+      if (this.storedRevision(key, entry.playerId) > standing.revision) continue;
+      if (standing.gamesPlayed > 0) {
+        this.write(key, entry.playerId, standing);
+      } else {
+        this.board(seasonId, mode).delete(entry.playerId);
+        const tombstones = this.tombstones.get(key) ?? new Map<string, number>();
+        tombstones.set(entry.playerId, standing.revision);
+        this.tombstones.set(key, tombstones);
+      }
+    }
+    this.releases += 1;
+  }
+
+  isHeld(boardKey: string, playerId: string): boolean {
+    return (this.held.get(boardKey)?.get(playerId) ?? 0) > 0;
+  }
+
+  private storedRevision(boardKey: string, playerId: string): number {
+    const [seasonId = "", mode = ""] = boardKey.split("|");
+    return (
+      this.board(seasonId, mode).get(playerId)?.revision ??
+      this.tombstones.get(boardKey)?.get(playerId) ??
+      -1
+    );
+  }
+
+  private write(
+    boardKey: string,
+    playerId: string,
+    standing: { mmr: number; region: string; revision: number },
+  ): void {
+    const [seasonId = "", mode = ""] = boardKey.split("|");
+    this.tombstones.get(boardKey)?.delete(playerId);
+    this.board(seasonId, mode).set(playerId, {
+      mmr: standing.mmr,
+      region: standing.region,
+      revision: standing.revision,
+    });
   }
 
   standing(seasonId: string, mode: string, playerId: string): StoredStanding | undefined {

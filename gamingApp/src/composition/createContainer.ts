@@ -11,6 +11,7 @@ import { createMatchEventsComposition } from "./matchEventsComposition.js";
 import { createMatchmakingComposition } from "./matchmakingComposition.js";
 import { createPlayerHistoryComposition } from "./playerHistoryComposition.js";
 import { createPlayersComposition } from "./playersComposition.js";
+import { createSanctionsComposition } from "./sanctionsComposition.js";
 
 type ContainerConnections = {
   cassandra: Client;
@@ -35,6 +36,12 @@ export function createContainer(connections: ContainerConnections): {
       createPlayerHistoryComposition(connections.mongo.database, connections.cassandra),
       createFraudComposition(connections.mongo.database, connections.neo4j),
       createLeaderboardsComposition(connections.mongo.database, connections.redis),
+      ...createSanctionsComposition({
+        cassandra: connections.cassandra,
+        mongo: connections.mongo.database,
+        neo4j: connections.neo4j,
+        redis: connections.redis,
+      }),
     ],
   };
 }
