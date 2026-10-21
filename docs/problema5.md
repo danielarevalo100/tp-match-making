@@ -204,7 +204,7 @@ Con 32 consultas en vuelo, la latencia corresponde a la espera en la cola de un 
 ## Limitaciones conocidas
 
 - **Cambio de región a mitad de temporada:** se refleja cuando el jugador cierra su próxima partida (el registro toma la región actual y el script lo mueve de tablero). `rebuild` no lo corrige, porque publica la región guardada en `seasonRatings`. Actualizar de inmediato desde `PATCH /players` queda pendiente: bastaría con actualizar los registros de la temporada activa de ese jugador (con `revision + 1`) y publicar solo esos.
-- **Cuentas cerradas o sancionadas:** siguen en la tabla. P8 tendrá que quitarlas o recalcular con el mismo mecanismo de revisiones.
+- **Cuentas cerradas o sancionadas:** siguen en la tabla. P8 eligió recalcular al sancionado con el mismo mecanismo de revisiones, en lugar de quitarlo (ver [`problema8.md`](problema8.md)).
 - **Catálogos:** se leen de Mongo en cada consulta (tres lecturas por `_id` en paralelo). Un caché en memoria con TTL bajaría la latencia si hiciera falta.
 - **Reconstrucción:** recorre la colección sin índice sobre la ruta dinámica. Es una operación administrativa poco frecuente.
 - **Temporadas cerradas:** su ZSET sigue en Redis. Archivarlas en Cassandra (o en Mongo) y liberar la memoria queda como trabajo opcional.
@@ -229,11 +229,11 @@ docs/problema5.md                     este análisis
 ## Qué asumen los problemas siguientes
 
 - **P6 (historial y estadísticas):** `seasonRatings` solo guarda el último valor de cada temporada. La evolución del rating partida a partida sale de `matches.finalScoreboard` (`mmrBefore`/`mmrAfter`) o de la tabla de historial que diseñe P6.
-- **P8 (sanción con reversión):**
-  - Al revertir rating tiene que actualizar `ratings` y `seasonRatings` en Mongo con `revision + 1`, y recién después publicar con `RedisLeaderboardAdapter.publish`: Mongo primero, Redis al final, como en P4.
-  - Conviene que publique a todos los afectados de una temporada y modo en una sola llamada, para que el tablero no muestre una reversión a medias. Cada invocación del script es atómica hasta 500 registros.
-  - Para quitar al sancionado usa `remove`.
-  - La consulta "perfil con posición en leaderboards" puede reutilizar `LeaderboardService.position` por modo.
+- **P8 (sanción con reversión), implementado en [`problema8.md`](problema8.md):**
+  - Revierte `ratings` y `seasonRatings` en Mongo con `revision + 1` y publica al final, como se previó.
+  - Para que una reversión que falla a mitad de camino no deje el tablero a medias, **retiene** a los afectados antes de tocar Mongo: `publishScript` y `removeScript` ahora saltean a los jugadores del hash `lb:{season}:{mode}:held`. Al terminar, `releaseScript` publica a todos los retenidos del tablero en una sola llamada (sin lotes) y suelta la retención.
+  - No quita al sancionado: lo recalcula. Sí quita a un jugador que se queda sin partidas válidas en la temporada (`gamesPlayed = 0`), dejando una lápida en `members`; `MongoLeaderboardAdapter` ignora esos registros, así que `rebuild` no lo devuelve.
+  - La consulta de perfil usa `around` con radio 0 por modo.
 - **P7 (comportamiento irregular):** no depende del leaderboard.
 - **Archivo en Cassandra (opcional):** una tabla `final_leaderboard_by_scope ((season, mode, scope), position)` cargada desde el ZSET al cerrar la temporada, con `position` como clave de clustering.
 - Cualquier cambio en los scripts Lua debe reflejarse en `InMemoryLeaderboardRanking` (orden por MMR descendente y desempate por `playerId` descendente).

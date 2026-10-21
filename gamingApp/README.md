@@ -197,6 +197,21 @@ Fault injection steps: `fraud.findOpposingPairs`, `fraud.findReportedByMany`, `f
 
 Both projections read the matches that problem 4 leaves `closed` with `scoringStatus=applied`, and both accept `{ afterId?, limit?, since? }` and return `{ matches, rows, nextCursor }` so they can be resumed.
 
+### sanctions
+
+Sanction with result reversal and the player profile (problem 8). The sanction is registered in MongoDB first and is in force whatever happens next. The reversal then only moves forward, recording each step in a journal inside the sanction: the player leaves the queue (Redis); the affected players are held in their leaderboards (Redis); each listed match is voided and its rating deltas reverted (MongoDB), and its rows are removed from the history (Cassandra) and from the graph (Neo4j); finally one Lua script per board publishes every held player and drops the hold. Until then the boards show none of the reversal, so a failure never leaves results partially voided. See [`docs/problema8.md`](../docs/problema8.md).
+
+| Method | Path                             | Purpose                                                                        |
+| ------ | -------------------------------- | ------------------------------------------------------------------------------ |
+| `POST` | `/sanctions`                     | Register the sanction and void the listed matches (idempotent by `sanctionId`) |
+| `GET`  | `/sanctions/:sanctionId`         | The sanction and its reversal journal                                          |
+| `POST` | `/sanctions/:sanctionId/resume`  | Continue an incomplete reversal from its journal                               |
+| `GET`  | `/profiles/:playerId?matches=10` | Profile, ratings, leaderboard positions, sanctions and latest matches          |
+
+`POST /sanctions` answers `201` (created, reversal completed), `200` (same `sanctionId` repeated) or `202` (sanction registered, reversal incomplete: retry or resume). Errors: `ADMINISTRATOR_NOT_FOUND` (404), `ADMINISTRATOR_NOT_ACTIVE` (422), `INVALID_SANCTION_REPORT` (422), `MATCH_NOT_REVERSIBLE` (422), `SANCTION_CONFLICT` (409), `SANCTION_NOT_FOUND` (404).
+
+Fault injection steps: `sanctions.findSanction`, `sanctions.findPlayer`, `sanctions.findAdministrator`, `sanctions.findReport`, `sanctions.findMatches`, `sanctions.insertSanction`, `matchmaking.leave`, `sanctions.markStep`, `sanctions.findSeasonCatalog`, `leaderboard.hold`, `sanctions.voidMatch`, `sanctions.revertRating`, `sanctions.deleteHistory`, `sanctions.deleteGraph`, `sanctions.markMatchReverted`, `sanctions.findStandings`, `leaderboard.release`, `leaderboard.publish`, `sanctions.completeReversal`, `profile.findPlayer`, `profile.findActiveSeason`, `profile.findSanctions`.
+
 ### Test data for problems 6 and 7
 
 With the stack running and the schema applied, from `gamingApp` (needs a `.env`, see below):
@@ -267,6 +282,8 @@ If player registration fails with "Document failed validation", the MongoDB volu
 `scripts/demo-problem-3.mjs` simulates 100 simultaneous matches (`node scripts/demo-problem-3.mjs`), checks the scoreboards and the Cassandra log, and provokes the failure scenarios. See `docs/problema3.md`.
 
 `scripts/demo-problem-5.mjs` seeds 50,000 ranked players into MongoDB, rebuilds the Redis leaderboards, checks the top 100 and a player's neighbours against MongoDB, measures latency, compares Redis `ZREVRANK` with a MongoDB count, and simulates losing the Redis boards (`node scripts/demo-problem-5.mjs`). It uses the drivers installed in `gamingApp`. See `docs/problema5.md`.
+
+`scripts/demo-problem-8.mjs` seeds three players and three closed ranked matches as problem 4 leaves them, sanctions the cheater with a failure injected half way (the leaderboard keeps its previous state), shows that a rebuild cannot publish the held players, resumes the reversal and checks every engine, then covers the idempotent retry, a failure before the sanction is registered, an invalid match and the matchmaking block (`node scripts/demo-problem-8.mjs`). It needs the whole Compose stack. See `docs/problema8.md`.
 
 ## Example registration
 

@@ -1,4 +1,5 @@
 export const mongoCollections = {
+  administrators: "administrators",
   gameModes: "game_modes",
   matches: "matches",
   players: "players",
@@ -24,6 +25,10 @@ export const redisKeys = {
   leaderboardRegional: (seasonId: string, mode: string, region: string): string =>
     `lb:${seasonId}:${mode}:region:${region}`,
   leaderboardMembers: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:members`,
+  /** Problem 8: `{holdId}|{playerId}` for every player a sanction reversal holds in this board. */
+  leaderboardHolds: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:holds`,
+  /** Problem 8: playerId -> number of reversals holding it; a held player is not published. */
+  leaderboardHeld: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:held`,
   match: (matchId: string): string => `match:${matchId}`,
   matchClosure: (matchId: string): string => `match:${matchId}:closure`,
   matchAppliedEvents: (matchId: string): string => `match:${matchId}:applied`,

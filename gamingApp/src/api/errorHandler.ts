@@ -33,6 +33,15 @@ import {
   PlayerNotFoundError,
   RegionNotFoundError,
 } from "./modules/players/business/models/playerErrors.js";
+import {
+  AdministratorNotActiveError,
+  AdministratorNotFoundError,
+  InvalidSanctionReportError,
+  MatchNotReversibleError,
+  SanctionConflictError,
+  SanctionNotFoundError,
+  SanctionPlayerNotFoundError,
+} from "./modules/sanctions/business/models/sanctionErrors.js";
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
   if (error instanceof ZodError) {
@@ -46,7 +55,11 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     return;
   }
 
-  if (error instanceof PlayerNotFoundError || error instanceof QueuePlayerNotFoundError) {
+  if (
+    error instanceof PlayerNotFoundError ||
+    error instanceof QueuePlayerNotFoundError ||
+    error instanceof SanctionPlayerNotFoundError
+  ) {
     response.status(404).json({ error: "PLAYER_NOT_FOUND", message: error.message });
     return;
   }
@@ -185,6 +198,62 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
       error: "PLAYER_NOT_RANKED",
       message: error.message,
       playerId: error.playerId,
+    });
+    return;
+  }
+
+  if (error instanceof SanctionNotFoundError) {
+    response.status(404).json({
+      error: "SANCTION_NOT_FOUND",
+      message: error.message,
+      sanctionId: error.sanctionId,
+    });
+    return;
+  }
+
+  if (error instanceof AdministratorNotFoundError) {
+    response.status(404).json({
+      administratorId: error.administratorId,
+      error: "ADMINISTRATOR_NOT_FOUND",
+      message: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof AdministratorNotActiveError) {
+    response.status(422).json({
+      administratorId: error.administratorId,
+      error: "ADMINISTRATOR_NOT_ACTIVE",
+      message: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof InvalidSanctionReportError) {
+    response.status(422).json({
+      error: "INVALID_SANCTION_REPORT",
+      message: error.message,
+      reason: error.reason,
+      reportId: error.reportId,
+    });
+    return;
+  }
+
+  if (error instanceof MatchNotReversibleError) {
+    response.status(422).json({
+      error: "MATCH_NOT_REVERSIBLE",
+      matchId: error.matchId,
+      message: error.message,
+      reason: error.reason,
+    });
+    return;
+  }
+
+  if (error instanceof SanctionConflictError) {
+    response.status(409).json({
+      error: "SANCTION_CONFLICT",
+      message: error.message,
+      sanctionId: error.sanctionId,
     });
     return;
   }
