@@ -78,7 +78,19 @@ upsertCatalog("regions", [
   {
     _id: "LATAM",
     name: "Latin America",
-    countries: ["AR", "BO", "CL", "CO", "CR", "EC", "MX", "PE", "PY", "UY", "VE"],
+    countries: [
+      "AR",
+      "BO",
+      "CL",
+      "CO",
+      "CR",
+      "EC",
+      "MX",
+      "PE",
+      "PY",
+      "UY",
+      "VE",
+    ],
     active: true,
   },
   { _id: "BR", name: "Brazil", countries: ["BR"], active: true },
@@ -88,7 +100,12 @@ upsertCatalog("regions", [
     countries: ["DE", "ES", "FR", "GB", "IT", "NL", "PL", "PT", "SE"],
     active: true,
   },
-  { _id: "ASIA", name: "Asia", countries: ["CN", "IN", "JP", "KR", "SG"], active: true },
+  {
+    _id: "ASIA",
+    name: "Asia",
+    countries: ["CN", "IN", "JP", "KR", "SG"],
+    active: true,
+  },
   { _id: "OCE", name: "Oceania", countries: ["AU", "NZ"], active: true },
 ]);
 
@@ -102,7 +119,16 @@ upsertCatalog("regions", [
 
 ensureCollection("game_modes", {
   bsonType: "object",
-  required: ["_id", "name", "minPlayers", "maxPlayers", "teams", "ranked", "active", "matchmaking"],
+  required: [
+    "_id",
+    "name",
+    "minPlayers",
+    "maxPlayers",
+    "teams",
+    "ranked",
+    "active",
+    "matchmaking",
+  ],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Mode code, e.g. ranked_5v5" },
@@ -116,7 +142,12 @@ ensureCollection("game_modes", {
     initialRating: { bsonType: NUMBER },
     matchmaking: {
       bsonType: "object",
-      required: ["initialRatingRange", "ratingRangeStep", "expandEverySeconds", "maxRatingRange"],
+      required: [
+        "initialRatingRange",
+        "ratingRangeStep",
+        "expandEverySeconds",
+        "maxRatingRange",
+      ],
       additionalProperties: false,
       properties: {
         initialRatingRange: { bsonType: NUMBER, minimum: 0 },
@@ -141,7 +172,12 @@ upsertCatalog("game_modes", [
     ranked: true,
     active: true,
     initialRating: 1000,
-    matchmaking: { initialRatingRange: 50, ratingRangeStep: 50, expandEverySeconds: 15, maxRatingRange: 400 },
+    matchmaking: {
+      initialRatingRange: 50,
+      ratingRangeStep: 50,
+      expandEverySeconds: 15,
+      maxRatingRange: 400,
+    },
   },
   {
     _id: "ranked_5v5",
@@ -153,7 +189,12 @@ upsertCatalog("game_modes", [
     ranked: true,
     active: true,
     initialRating: 1000,
-    matchmaking: { initialRatingRange: 100, ratingRangeStep: 50, expandEverySeconds: 20, maxRatingRange: 500 },
+    matchmaking: {
+      initialRatingRange: 100,
+      ratingRangeStep: 50,
+      expandEverySeconds: 20,
+      maxRatingRange: 500,
+    },
   },
   {
     _id: "casual_5v5",
@@ -165,7 +206,12 @@ upsertCatalog("game_modes", [
     ranked: false,
     active: true,
     initialRating: 1000,
-    matchmaking: { initialRatingRange: 200, ratingRangeStep: 100, expandEverySeconds: 10, maxRatingRange: 1000 },
+    matchmaking: {
+      initialRatingRange: 200,
+      ratingRangeStep: 100,
+      expandEverySeconds: 10,
+      maxRatingRange: 1000,
+    },
   },
   {
     _id: "battle_royale",
@@ -177,7 +223,12 @@ upsertCatalog("game_modes", [
     ranked: true,
     active: true,
     initialRating: 1000,
-    matchmaking: { initialRatingRange: 150, ratingRangeStep: 75, expandEverySeconds: 15, maxRatingRange: 600 },
+    matchmaking: {
+      initialRatingRange: 150,
+      ratingRangeStep: 75,
+      expandEverySeconds: 15,
+      maxRatingRange: 600,
+    },
   },
 ]);
 
@@ -202,7 +253,11 @@ ensureCollection("seasons", {
 gamingDb.seasons.createIndex({ name: 1 }, { unique: true });
 gamingDb.seasons.createIndex(
   { status: 1 },
-  { unique: true, partialFilterExpression: { status: "active" }, name: "one_active_season" },
+  {
+    unique: true,
+    partialFilterExpression: { status: "active" },
+    name: "one_active_season",
+  },
 );
 gamingDb.seasons.createIndex({ startsAt: 1 });
 
@@ -237,18 +292,38 @@ upsertCatalog("seasons", [
 
 ensureCollection("players", {
   bsonType: "object",
-  required: ["_id", "username", "email", "passwordHash", "registeredAt", "updatedAt", "country", "region", "level", "accountStatus", "ratings"],
+  required: [
+    "_id",
+    "username",
+    "email",
+    "passwordHash",
+    "registeredAt",
+    "updatedAt",
+    "country",
+    "region",
+    "level",
+    "accountStatus",
+    "ratings",
+  ],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Shared player id (UUID)" },
-    username: { bsonType: "string", minLength: 3, maxLength: 32, pattern: "^[^A-Z]+$" },
+    username: {
+      bsonType: "string",
+      minLength: 3,
+      maxLength: 32,
+      pattern: "^[^A-Z]+$",
+    },
     email: { bsonType: "string", pattern: "^[^@\\sA-Z]+@[^@\\sA-Z]+$" },
     passwordHash: { bsonType: "string" },
     birthDate: { bsonType: "date" },
     registeredAt: { bsonType: "date" },
     updatedAt: { bsonType: "date" },
     country: { bsonType: "string", pattern: "^[A-Z]{2}$" },
-    region: { bsonType: "string", description: "regions._id derived from country" },
+    region: {
+      bsonType: "string",
+      description: "regions._id derived from country",
+    },
     level: { bsonType: INTEGER, minimum: 1 },
     accountStatus: { enum: ["active", "inactive", "closed"] },
     avatarUrl: { bsonType: "string" },
@@ -268,7 +343,8 @@ ensureCollection("players", {
     },
     appliedRatingMatches: {
       bsonType: "array",
-      description: "Match ids whose eventual rating adjustment was already applied",
+      description:
+        "Match ids whose eventual rating adjustment was already applied",
       uniqueItems: true,
       items: { bsonType: "string" },
     },
@@ -283,18 +359,15 @@ gamingDb.players.createIndex({ country: 1 });
 // Version 3 migration: normalize existing identifiers and backfill updatedAt.
 // A case-insensitive collision intentionally fails against the unique indexes
 // and must be resolved explicitly instead of silently merging accounts.
-gamingDb.players.updateMany(
-  {},
-  [
-    {
-      $set: {
-        username: { $toLower: "$username" },
-        email: { $toLower: "$email" },
-        updatedAt: { $ifNull: ["$updatedAt", "$registeredAt"] },
-      },
+gamingDb.players.updateMany({}, [
+  {
+    $set: {
+      username: { $toLower: "$username" },
+      email: { $toLower: "$email" },
+      updatedAt: { $ifNull: ["$updatedAt", "$registeredAt"] },
     },
-  ],
-);
+  },
+]);
 
 // ---------------------------------------------------------------------------
 // administrators
@@ -302,7 +375,14 @@ gamingDb.players.updateMany(
 
 ensureCollection("administrators", {
   bsonType: "object",
-  required: ["_id", "username", "email", "permissionLevel", "createdAt", "active"],
+  required: [
+    "_id",
+    "username",
+    "email",
+    "permissionLevel",
+    "createdAt",
+    "active",
+  ],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Shared administrator id (UUID)" },
@@ -325,15 +405,34 @@ gamingDb.administrators.createIndex({ email: 1 }, { unique: true });
 
 ensureCollection("reports", {
   bsonType: "object",
-  required: ["_id", "reportedPlayerId", "reporterPlayerId", "reason", "createdAt", "status"],
+  required: [
+    "_id",
+    "reportedPlayerId",
+    "reporterPlayerId",
+    "reason",
+    "createdAt",
+    "status",
+  ],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Shared report id (UUID)" },
     reportedPlayerId: { bsonType: "string" },
-    reporterPlayerId: { bsonType: ["string", "null"], description: "null = automatic report" },
+    reporterPlayerId: {
+      bsonType: ["string", "null"],
+      description: "null = automatic report",
+    },
     matchId: { bsonType: ["string", "null"] },
     assignedAdminId: { bsonType: ["string", "null"] },
-    reason: { enum: ["cheating", "match_fixing", "toxicity", "griefing", "afk", "other"] },
+    reason: {
+      enum: [
+        "cheating",
+        "match_fixing",
+        "toxicity",
+        "griefing",
+        "afk",
+        "other",
+      ],
+    },
     description: { bsonType: "string" },
     createdAt: { bsonType: "date" },
     status: { enum: ["open", "assigned", "resolved", "dismissed"] },
@@ -343,6 +442,8 @@ ensureCollection("reports", {
 gamingDb.reports.createIndex({ reportedPlayerId: 1, createdAt: -1 });
 gamingDb.reports.createIndex({ status: 1, createdAt: 1 });
 gamingDb.reports.createIndex({ matchId: 1 }, { sparse: true });
+// Problem 7: reports received by any player inside a time window.
+gamingDb.reports.createIndex({ createdAt: 1 });
 
 // ---------------------------------------------------------------------------
 // sanctions
@@ -353,14 +454,30 @@ gamingDb.reports.createIndex({ matchId: 1 }, { sparse: true });
 
 ensureCollection("sanctions", {
   bsonType: "object",
-  required: ["_id", "playerId", "adminId", "type", "reason", "startsAt", "endsAt", "status", "createdAt"],
+  required: [
+    "_id",
+    "playerId",
+    "adminId",
+    "type",
+    "reason",
+    "startsAt",
+    "endsAt",
+    "status",
+    "createdAt",
+  ],
   additionalProperties: false,
   properties: {
     _id: { bsonType: "string", description: "Shared sanction id (UUID)" },
     playerId: { bsonType: "string" },
     adminId: { bsonType: "string" },
     reportId: { bsonType: ["string", "null"] },
-    type: { enum: ["matchmaking_restriction", "temporary_suspension", "permanent_ban"] },
+    type: {
+      enum: [
+        "matchmaking_restriction",
+        "temporary_suspension",
+        "permanent_ban",
+      ],
+    },
     reason: { bsonType: "string" },
     description: { bsonType: "string" },
     startsAt: { bsonType: "date" },
@@ -384,7 +501,15 @@ gamingDb.sanctions.createIndex({ reportId: 1 }, { sparse: true });
 
 ensureCollection("matches", {
   bsonType: "object",
-  required: ["_id", "mode", "region", "status", "players", "ratingRange", "createdAt"],
+  required: [
+    "_id",
+    "mode",
+    "region",
+    "status",
+    "players",
+    "ratingRange",
+    "createdAt",
+  ],
   additionalProperties: true,
   properties: {
     _id: { bsonType: "string", description: "Shared match id (UUID)" },
@@ -418,14 +543,20 @@ gamingDb.matches.createIndex({ "players.playerId": 1, createdAt: -1 });
 
 gamingDb.schema_metadata.updateOne(
   { version: 1 },
-  { $setOnInsert: { description: "Initial infrastructure schema", appliedAt: new Date() } },
+  {
+    $setOnInsert: {
+      description: "Initial infrastructure schema",
+      appliedAt: new Date(),
+    },
+  },
   { upsert: true },
 );
 gamingDb.schema_metadata.updateOne(
   { version: 2 },
   {
     $setOnInsert: {
-      description: "Players, catalogs (regions, game modes, seasons), administrators, reports and sanctions",
+      description:
+        "Players, catalogs (regions, game modes, seasons), administrators, reports and sanctions",
       appliedAt: new Date(),
     },
   },
@@ -456,6 +587,17 @@ gamingDb.schema_metadata.updateOne(
   {
     $setOnInsert: {
       description: "Idempotent match closure and eventual rating adjustments",
+      appliedAt: new Date(),
+    },
+  },
+  { upsert: true },
+);
+gamingDb.schema_metadata.updateOne(
+  { version: 6 },
+  {
+    $setOnInsert: {
+      description:
+        "Index of reports by creation date for irregular behavior detection",
       appliedAt: new Date(),
     },
   },

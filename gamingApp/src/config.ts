@@ -12,6 +12,12 @@ const environmentSchema = z
     MONGODB_DB_NAME: z.string().trim().min(1).default("gaming"),
     MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
     MONGODB_URI: z.string().trim().min(1),
+    NEO4J_CONNECT_RETRIES: z.coerce.number().int().min(1).max(100).default(10),
+    NEO4J_DATABASE: z.string().trim().min(1).default("neo4j"),
+    NEO4J_PASSWORD: z.string().min(1),
+    NEO4J_RETRY_DELAY_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
+    NEO4J_URI: z.string().trim().min(1),
+    NEO4J_USERNAME: z.string().trim().min(1).default("neo4j"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3_000),
     REDIS_CONNECT_RETRIES: z.coerce.number().int().min(1).max(100).default(10),
@@ -32,6 +38,12 @@ export type AppConfig = {
   mongoDatabaseName: string;
   mongoRetryDelayMs: number;
   mongoUri: string;
+  neo4jConnectRetries: number;
+  neo4jDatabase: string;
+  neo4jPassword: string;
+  neo4jRetryDelayMs: number;
+  neo4jUri: string;
+  neo4jUsername: string;
   nodeEnv: "development" | "test" | "production";
   port: number;
   redisConnectRetries: number;
@@ -55,6 +67,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     mongoDatabaseName: parsed.MONGODB_DB_NAME,
     mongoRetryDelayMs: parsed.MONGODB_RETRY_DELAY_MS,
     mongoUri: parsed.MONGODB_URI,
+    neo4jConnectRetries: parsed.NEO4J_CONNECT_RETRIES,
+    neo4jDatabase: parsed.NEO4J_DATABASE,
+    neo4jPassword: parsed.NEO4J_PASSWORD,
+    neo4jRetryDelayMs: parsed.NEO4J_RETRY_DELAY_MS,
+    neo4jUri: parsed.NEO4J_URI,
+    neo4jUsername: parsed.NEO4J_USERNAME,
     nodeEnv: parsed.NODE_ENV,
     port: parsed.PORT,
     redisConnectRetries: parsed.REDIS_CONNECT_RETRIES,

@@ -6,15 +6,15 @@ MongoDB is the source of truth for durable domain data that is read in many diff
 
 ## Collections
 
-| Collection | `_id` | Content | Main indexes |
-|---|---|---|---|
-| `regions` | Code (`LATAM`) | Static catalog. Each region lists its ISO countries | `countries` unique: a country belongs to one region |
-| `game_modes` | Code (`ranked_5v5`) | Static catalog. Players per match, teams, ranked, matchmaking parameters | `name` unique |
-| `seasons` | Code (`2026-S2`) | Static catalog with dates and status | Partial unique on `status: "active"`: one active season |
-| `players` | UUID string | Profile, normalized username/email, `country`, derived `region`, `ratings` per mode | `username`, `email` unique; `region` |
-| `administrators` | UUID string | Platform administrators | `username`, `email` unique |
-| `reports` | UUID string | Reports; `reporterPlayerId: null` = automatic | `reportedPlayerId + createdAt`; `status + createdAt` |
-| `sanctions` | UUID string | Sanctions; `endsAt: null` = permanent | `playerId + status + endsAt` |
+| Collection       | `_id`               | Content                                                                             | Main indexes                                            |
+| ---------------- | ------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `regions`        | Code (`LATAM`)      | Static catalog. Each region lists its ISO countries                                 | `countries` unique: a country belongs to one region     |
+| `game_modes`     | Code (`ranked_5v5`) | Static catalog. Players per match, teams, ranked, matchmaking parameters            | `name` unique                                           |
+| `seasons`        | Code (`2026-S2`)    | Static catalog with dates and status                                                | Partial unique on `status: "active"`: one active season |
+| `players`        | UUID string         | Profile, normalized username/email, `country`, derived `region`, `ratings` per mode | `username`, `email` unique; `region`                    |
+| `administrators` | UUID string         | Platform administrators                                                             | `username`, `email` unique                              |
+| `reports`        | UUID string         | Reports; `reporterPlayerId: null` = automatic                                       | `reportedPlayerId + createdAt`; `status + createdAt`    |
+| `sanctions`      | UUID string         | Sanctions; `endsAt: null` = permanent                                               | `playerId + status + endsAt`                            |
 
 ## Modeling decisions
 
@@ -39,5 +39,5 @@ db.sanctions.findOne({
 
 ## Pending
 
-- Player statistics (`ESTADISTICAS_JUGADOR`) and match history are not modeled here yet. Decide this alongside problems 4 and 6.
-- Bulk test data (≥ 50,000 records) belongs to the load script, not to this schema file.
+- Player statistics (`ESTADISTICAS_JUGADOR`) are derived on read from the history in Cassandra (problem 6, see `docs/problema6.md`); they are not stored here.
+- Bulk test data (≥ 50,000 records) belongs to the load script, not to this schema file. `pnpm seed:history` (in `gamingApp`) covers the data for problems 6 and 7.

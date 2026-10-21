@@ -3,6 +3,7 @@ import { createContainer } from "./composition/createContainer.js";
 import { loadConfig } from "./config.js";
 import { connectToCassandra } from "./infrastructure/cassandra/cassandraConnection.js";
 import { connectToMongo } from "./infrastructure/mongo/mongoConnection.js";
+import { connectToNeo4j } from "./infrastructure/neo4j/neo4jConnection.js";
 import { connectToRedis } from "./infrastructure/redis/redisConnection.js";
 
 async function main(): Promise<void> {
@@ -28,12 +29,21 @@ async function main(): Promise<void> {
     localDataCenter: config.cassandraLocalDataCenter,
     port: config.cassandraPort,
   });
+  const neo4j = await connectToNeo4j({
+    attempts: config.neo4jConnectRetries,
+    database: config.neo4jDatabase,
+    delayMs: config.neo4jRetryDelayMs,
+    password: config.neo4jPassword,
+    uri: config.neo4jUri,
+    username: config.neo4jUsername,
+  });
 
-  const container = createContainer({ cassandra, mongo, redis });
+  const container = createContainer({ cassandra, mongo, neo4j, redis });
   const app = createApp({
     checkReadiness: async () => {
       await mongo.database.command({ ping: 1 });
       await cassandra.execute("SELECT release_version FROM system.local");
+      await neo4j.driver.verifyConnectivity({ database: neo4j.database });
       return (await redis.ping()) === "PONG";
     },
     routes: container.routes,
@@ -57,7 +67,12 @@ async function main(): Promise<void> {
     forceExitTimer.unref();
 
     server.close((serverError) => {
-      void Promise.all([mongo.client.close(), redis.quit(), cassandra.shutdown()])
+      void Promise.all([
+        mongo.client.close(),
+        redis.quit(),
+        cassandra.shutdown(),
+        neo4j.driver.close(),
+      ])
         .then(() => {
           clearTimeout(forceExitTimer);
           if (serverError) {

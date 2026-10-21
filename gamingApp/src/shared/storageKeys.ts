@@ -3,11 +3,14 @@ export const mongoCollections = {
   matches: "matches",
   players: "players",
   regions: "regions",
+  reports: "reports",
   sanctions: "sanctions",
+  seasons: "seasons",
 } as const;
 
 export const cassandraTables = {
   eventsByMatch: "events_by_match",
+  matchHistoryByPlayer: "match_history_by_player",
 } as const;
 
 export const redisKeys = {

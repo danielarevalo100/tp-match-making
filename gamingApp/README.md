@@ -24,6 +24,9 @@ src/
 |   |-- mongo/
 |   |   |-- mongoConnection.ts
 |   |   `-- baseMongoAdapter.ts
+|   |-- neo4j/
+|   |   |-- neo4jConnection.ts
+|   |   `-- baseNeo4jAdapter.ts
 |   `-- redis/
 |       |-- redisConnection.ts
 |       `-- baseRedisAdapter.ts
@@ -131,12 +134,12 @@ Fault injection steps: `matchmaking.findPlayer`, `matchmaking.findActiveMode`, `
 
 In-match events and live scoreboard (problem 3). Events are appended to Cassandra (`events_by_match`) and applied to a scoreboard in Redis; both are written for every event, log first. See [`docs/problema3.md`](../docs/problema3.md).
 
-| Method | Path                                       | Purpose                                              |
-| ------ | ------------------------------------------ | ---------------------------------------------------- |
-| `POST` | `/matches/:matchId/events`                 | Record an event (idempotent by `eventId`)            |
-| `GET`  | `/matches/:matchId/events`                 | Read the log in time order (`fromTsMs`, `toTsMs`, `limit`, `pageState`) |
-| `GET`  | `/matches/:matchId/scoreboard`             | Live scoreboard                                      |
-| `POST` | `/matches/:matchId/scoreboard/reconcile`   | Apply to the scoreboard any logged event it is missing |
+| Method | Path                                     | Purpose                                                                 |
+| ------ | ---------------------------------------- | ----------------------------------------------------------------------- |
+| `POST` | `/matches/:matchId/events`               | Record an event (idempotent by `eventId`)                               |
+| `GET`  | `/matches/:matchId/events`               | Read the log in time order (`fromTsMs`, `toTsMs`, `limit`, `pageState`) |
+| `GET`  | `/matches/:matchId/scoreboard`           | Live scoreboard                                                         |
+| `POST` | `/matches/:matchId/scoreboard/reconcile` | Apply to the scoreboard any logged event it is missing                  |
 
 Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `matchEvents.applyScoreboard`, `matchEvents.listEvents`, `matchEvents.findScoreboard`.
 
@@ -144,27 +147,63 @@ Fault injection steps: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `
 
 Match closure and eventual scoring (problem 4). The workflow prepares `closing` in Redis and MongoDB, commits the immutable `match_finished` event in Cassandra, releases players atomically, and then rebuilds the authoritative score from Cassandra. See [`docs/problema4.md`](../docs/problema4.md).
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
+| Method | Path                       | Purpose                                                 |
+| ------ | -------------------------- | ------------------------------------------------------- |
 | `POST` | `/matches/:matchId/finish` | Idempotently close, release players and attempt scoring |
 
 Lifecycle and scoring are independent: a response may contain `status=closed`, `playersReleased=true`, and `scoringStatus=failed`. Repeating the same payload retries scoring without duplicating the fixed rating delta (`win +25`, `loss -25`, `draw 0`).
 
 Fault injection steps: `matchClosure.findMatch`, `matchClosure.beginClosing`, `matchClosure.prepareMongo`, `matchClosure.appendFinished`, `matchClosure.releasePlayers`, `matchClosure.markClosed`, `matchClosure.beginScoring`, `matchClosure.listEvents`, `matchClosure.applyRating`, `matchClosure.completeScoring`.
 
+### playerHistory
+
+Player history and statistics (problem 6, read-only). The last 50 matches and the statistics of the week, month and active season come from one Cassandra partition per player (`match_history_by_player`); MongoDB provides the player and the season calendar. Statistics are derived on every read, never stored. See [`docs/problema6.md`](../docs/problema6.md).
+
+| Method | Path                         | Purpose                                                                           |
+| ------ | ---------------------------- | --------------------------------------------------------------------------------- |
+| `GET`  | `/history/players/:playerId` | Last 50 matches, and `week` / `month` / `season` statistics with rating evolution |
+| `POST` | `/history/projection`        | Idempotently copy closed matches (MongoDB) into the history (Cassandra)           |
+
+Fault injection steps: `playerHistory.findPlayer`, `playerHistory.findActiveSeason`, `playerHistory.findLatest`, `playerHistory.findSince`, `playerHistory.listClosedMatches`, `playerHistory.appendRows`.
+
+### fraudDetection
+
+Irregular behavior detection (problem 7, read-only). Match fixing is found in a Neo4j co-participation graph (`(:Player)-[:PLAYED]->(:Match)`); converging reports come from MongoDB. See [`docs/problema7.md`](../docs/problema7.md).
+
+| Method | Path                        | Purpose                                                                                                |
+| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/fraud/match-fixing`       | Players who keep beating the same opponents (`days`, `minMatches`, `minBenefitRatio`, `mode`, `limit`) |
+| `GET`  | `/fraud/cross-reports`      | Players reported by several different people in a short time (`days`, `minReporters`, `windowMinutes`) |
+| `GET`  | `/fraud/irregular-behavior` | Both signals, and the players present in both                                                          |
+| `POST` | `/fraud/projection`         | Idempotently load closed matches (MongoDB) into the graph (Neo4j)                                      |
+
+Fault injection steps: `fraud.findOpposingPairs`, `fraud.findReportedByMany`, `fraud.findUsernames`, `fraud.upsertMatches`.
+
+Both projections read the matches that problem 4 leaves `closed` with `scoringStatus=applied`, and both accept `{ afterId?, limit?, since? }` and return `{ matches, rows, nextCursor }` so they can be resumed.
+
+### Test data for problems 6 and 7
+
+With the stack running and the schema applied, from `gamingApp` (needs a `.env`, see below):
+
+```bash
+pnpm seed:history
+```
+
+It writes 2,000 players, 50,000 closed matches and about 300 reports to MongoDB (deterministic ids: running it again does not duplicate anything), then runs both projections to load Cassandra and Neo4j. It plants the cases listed in `docs/problema7.md`. Override with `SEED_PLAYERS`, `SEED_MATCHES`, `SEED_REPORTS` and `SEED_NOW`.
+
 ## Shared endpoints
 
-| Method | Path      | Purpose                     |
-| ------ | --------- | --------------------------- |
-| `GET`  | `/health` | Process liveness            |
-| `GET`  | `/ready`  | MongoDB, Cassandra and Redis readiness |
+| Method | Path      | Purpose                                       |
+| ------ | --------- | --------------------------------------------- |
+| `GET`  | `/health` | Process liveness                              |
+| `GET`  | `/ready`  | MongoDB, Cassandra, Neo4j and Redis readiness |
 
 ## Local development
 
-From the repository root, copy `.env.example` to `.env` and ensure the MongoDB, Redis and Cassandra containers and the schema are running (Cassandra takes about a minute to become healthy, and the app needs its keyspace, so apply the schema before starting the app):
+From the repository root, copy `.env.example` to `.env` and ensure the MongoDB, Redis, Cassandra and Neo4j containers and the schema are running (Cassandra takes about a minute to become healthy, and the app needs its keyspace, so apply the schema before starting the app):
 
 ```bash
-docker compose up -d mongodb redis cassandra
+docker compose up -d mongodb redis cassandra neo4j
 ./scripts/initialize-infrastructure.sh
 ```
 
@@ -176,7 +215,7 @@ The project uses pnpm, pinned in the `packageManager` field of `package.json`. E
 corepack enable
 ```
 
-Then, from `gamingApp`, copy `.env.example` to `.env`. Use `127.0.0.1` rather than `localhost` in `REDIS_URL`: on some Windows and Docker Desktop setups `localhost` resolves to `::1` and the connection is reset.
+Then, from `gamingApp`, copy `.env.example` to `.env`. Use `127.0.0.1` rather than `localhost` in `REDIS_URL`: on some Windows and Docker Desktop setups `localhost` resolves to `::1` and the connection is reset. `NEO4J_PASSWORD` must be the password of `NEO4J_AUTH` in the root `.env`.
 
 ```bash
 pnpm install
