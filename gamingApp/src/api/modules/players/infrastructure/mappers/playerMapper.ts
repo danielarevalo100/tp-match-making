@@ -1,5 +1,4 @@
-import { MongoServerError } from "mongodb";
-
+import { isDuplicateKeyError } from "../../../../../infrastructure/mongo/baseMongoAdapter.js";
 import type { AccountStatus, Player, PlayerRating } from "../../business/models/player.js";
 import { PlayerConflictError } from "../../business/models/playerErrors.js";
 
@@ -20,7 +19,7 @@ export type PlayerDocument = {
 };
 
 export function toConflictError(error: unknown): PlayerConflictError | null {
-  if (!(error instanceof MongoServerError) || error.code !== 11_000) return null;
+  if (!isDuplicateKeyError(error)) return null;
   return new PlayerConflictError(error.message.includes("email_1") ? "email" : "username");
 }
 

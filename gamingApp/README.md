@@ -18,6 +18,7 @@ src/
 |   `-- storageKeys.ts
 |-- infrastructure/
 |   |-- baseAdapter.ts
+|   |-- retry.ts
 |   |-- cassandra/
 |   |   |-- cassandraConnection.ts
 |   |   `-- baseCassandraAdapter.ts
@@ -61,6 +62,10 @@ test/
 - **Composition**: each `<module>Composition.ts` builds the adapters, service, controller and router of one module and returns the path where it is mounted.
 
 Files and folders use camelCase.
+
+## Errors
+
+Business errors extend `AppError` (`shared/errors.ts`) and declare their HTTP status, their code and any extra field for the response, for example `super(404, "PLAYER_NOT_FOUND", message)`. `api/errorHandler.ts` answers every `AppError` the same way: the status and `{ "error": code, "message": ..., ...details }`. Each module keeps its errors in `business/models/<module>Errors.ts`.
 
 ## Base adapter
 

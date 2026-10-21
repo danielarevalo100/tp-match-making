@@ -18,14 +18,8 @@ const countrySchema = z
   .regex(/^[A-Z]{2}$/);
 const avatarUrlSchema = z.string().trim().url().max(2_048);
 
-const birthDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Birth date must use YYYY-MM-DD.")
-  .refine((value) => {
-    const date = new Date(`${value}T00:00:00.000Z`);
-    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
-  }, "Birth date must be a valid calendar date.")
-  .transform((value) => new Date(`${value}T00:00:00.000Z`));
+// YYYY-MM-DD and a real calendar date (no February 30th).
+const birthDateSchema = z.iso.date().transform((value) => new Date(`${value}T00:00:00.000Z`));
 
 export const registerPlayerSchema = z
   .object({

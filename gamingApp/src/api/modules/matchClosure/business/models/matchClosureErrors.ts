@@ -1,33 +1,44 @@
-export class MatchForClosureNotFoundError extends Error {
+import { AppError } from "../../../../../shared/errors.js";
+
+export class MatchForClosureNotFoundError extends AppError {
   constructor(matchId: string) {
-    super(`Match ${matchId} was not found.`);
-    this.name = "MatchForClosureNotFoundError";
+    super(404, "MATCH_NOT_FOUND", `Match ${matchId} was not found.`);
   }
 }
 
-export class MatchClosureConflictError extends Error {
+export class MatchClosureConflictError extends AppError {
   constructor(
     readonly matchId: string,
     readonly currentStatus: string,
   ) {
-    super(`Match ${matchId} cannot be closed from status ${currentStatus}.`);
-    this.name = "MatchClosureConflictError";
+    super(
+      409,
+      "MATCH_CLOSE_CONFLICT",
+      `Match ${matchId} cannot be closed from status ${currentStatus}.`,
+      { currentStatus, matchId },
+    );
   }
 }
 
-export class MatchClosureParticipantsError extends Error {
+export class MatchClosureParticipantsError extends AppError {
   constructor(readonly reason: string) {
-    super(`The declared match results are invalid: ${reason}.`);
-    this.name = "MatchClosureParticipantsError";
+    super(422, "INVALID_MATCH_RESULTS", `The declared match results are invalid: ${reason}.`, {
+      reason,
+    });
   }
 }
 
-export class MatchCloseUnavailableError extends Error {
+export class MatchCloseUnavailableError extends AppError {
   constructor(
     readonly matchId: string,
     cause: Error,
   ) {
-    super(`Match ${matchId} could not be moved to the closing state.`, { cause });
-    this.name = "MatchCloseUnavailableError";
+    super(
+      503,
+      "MATCH_CLOSE_UNAVAILABLE",
+      `Match ${matchId} could not be moved to the closing state.`,
+      { matchId },
+    );
+    this.cause = cause;
   }
 }

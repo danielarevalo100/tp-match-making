@@ -16,8 +16,8 @@ import type { EligibilityRepositoryPort, MatchmakingQueuePort } from "../ports/m
 export type EnqueuePlayerInput = {
   mode: string;
   playerId: string;
-  region?: string | undefined;
-  ticketId?: string | undefined;
+  region?: string;
+  ticketId?: string;
 };
 
 export class MatchmakingService {

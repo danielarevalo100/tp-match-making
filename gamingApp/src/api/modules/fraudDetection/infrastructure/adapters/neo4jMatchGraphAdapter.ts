@@ -58,7 +58,7 @@ export class Neo4jMatchGraphAdapter extends BaseNeo4jAdapter implements MatchGra
   async findOpposingPairs(query: {
     limit: number;
     minMatches: number;
-    mode?: string | undefined;
+    mode?: string;
     since: Date;
   }): Promise<OpposingPair[]> {
     const records = await this.query("fraud.findOpposingPairs", "read", findOpposingPairs, {

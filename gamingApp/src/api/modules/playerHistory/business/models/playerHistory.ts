@@ -78,13 +78,13 @@ export type ClosedMatch = {
 export type ClosedMatchQuery = {
   afterId: string | null;
   limit: number;
-  since?: Date | undefined;
+  since?: Date;
 };
 
 export type ProjectionInput = {
   afterId: string | null;
   limit: number;
-  since?: Date | undefined;
+  since?: Date;
 };
 
 export type ProjectionResult = {

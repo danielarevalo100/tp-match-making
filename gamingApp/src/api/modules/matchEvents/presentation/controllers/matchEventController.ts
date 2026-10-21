@@ -13,29 +13,14 @@ export class MatchEventController {
   readonly record = async (request: Request, response: Response): Promise<void> => {
     const { matchId } = matchIdParamSchema.parse(request.params);
     const body = recordEventSchema.parse(request.body as unknown);
-    const result = await this.events.record({
-      eventId: body.eventId,
-      matchId,
-      playerId: body.playerId,
-      tsMs: body.tsMs,
-      type: body.type,
-      ...(body.detail !== undefined ? { detail: body.detail } : {}),
-      ...(body.points !== undefined ? { points: body.points } : {}),
-      ...(body.targetPlayerId !== undefined ? { targetPlayerId: body.targetPlayerId } : {}),
-    });
+    const result = await this.events.record({ matchId, ...body });
     response.status(result.status === "recorded" ? 201 : 200).json(result);
   };
 
   readonly list = async (request: Request, response: Response): Promise<void> => {
     const { matchId } = matchIdParamSchema.parse(request.params);
-    const { fromTsMs, limit, pageState, toTsMs } = listEventsSchema.parse(request.query);
-    const page = await this.events.listEvents(matchId, {
-      limit,
-      ...(fromTsMs !== undefined ? { fromTsMs } : {}),
-      ...(pageState !== undefined ? { pageState } : {}),
-      ...(toTsMs !== undefined ? { toTsMs } : {}),
-    });
-    response.json(page);
+    const query = listEventsSchema.parse(request.query);
+    response.json(await this.events.listEvents(matchId, query));
   };
 
   readonly scoreboard = async (request: Request, response: Response): Promise<void> => {

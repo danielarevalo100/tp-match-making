@@ -1,5 +1,7 @@
 import { MongoClient, type Db } from "mongodb";
 
+import { retry } from "../retry.js";
+
 export type MongoConnection = {
   client: MongoClient;
   database: Db;
@@ -13,14 +15,8 @@ type MongoConnectionOptions = {
   uri: string;
 };
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-export async function connectToMongo(options: MongoConnectionOptions): Promise<MongoConnection> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+export function connectToMongo(options: MongoConnectionOptions): Promise<MongoConnection> {
+  return retry(options.attempts, options.delayMs, async () => {
     const client = new MongoClient(options.uri, { appName: options.appName });
     try {
       await client.connect();
@@ -28,13 +24,8 @@ export async function connectToMongo(options: MongoConnectionOptions): Promise<M
       await database.command({ ping: 1 });
       return { client, database };
     } catch (error: unknown) {
-      lastError = error;
       await client.close().catch(() => undefined);
-      if (attempt < options.attempts) await delay(options.delayMs);
+      throw error;
     }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("MongoDB connection failed for an unspecified reason.");
+  });
 }

@@ -1,5 +1,7 @@
 import { Client, types } from "cassandra-driver";
 
+import { retry } from "../retry.js";
+
 type CassandraConnectionOptions = {
   attempts: number;
   contactPoints: readonly string[];
@@ -9,15 +11,9 @@ type CassandraConnectionOptions = {
   port: number;
 };
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 // The keyspace must already exist (infra/cassandra/init.cql), otherwise every attempt fails.
-export async function connectToCassandra(options: CassandraConnectionOptions): Promise<Client> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+export function connectToCassandra(options: CassandraConnectionOptions): Promise<Client> {
+  return retry(options.attempts, options.delayMs, async () => {
     const client = new Client({
       contactPoints: options.contactPoints.map((host) => `${host}:${options.port}`),
       keyspace: options.keyspace,
@@ -34,13 +30,8 @@ export async function connectToCassandra(options: CassandraConnectionOptions): P
       await client.connect();
       return client;
     } catch (error: unknown) {
-      lastError = error;
       await client.shutdown().catch(() => undefined);
-      if (attempt < options.attempts) await delay(options.delayMs);
+      throw error;
     }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Cassandra connection failed for an unspecified reason.");
+  });
 }

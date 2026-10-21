@@ -106,26 +106,26 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const mongo = await connectToMongo({
     appName: "gaming-seed",
-    attempts: config.mongoConnectRetries,
-    databaseName: config.mongoDatabaseName,
-    delayMs: config.mongoRetryDelayMs,
-    uri: config.mongoUri,
+    attempts: config.MONGODB_CONNECT_RETRIES,
+    databaseName: config.MONGODB_DB_NAME,
+    delayMs: config.MONGODB_RETRY_DELAY_MS,
+    uri: config.MONGODB_URI,
   });
   const cassandra = await connectToCassandra({
-    attempts: config.cassandraConnectRetries,
-    contactPoints: config.cassandraContactPoints,
-    delayMs: config.cassandraRetryDelayMs,
-    keyspace: config.cassandraKeyspace,
-    localDataCenter: config.cassandraLocalDataCenter,
-    port: config.cassandraPort,
+    attempts: config.CASSANDRA_CONNECT_RETRIES,
+    contactPoints: config.CASSANDRA_CONTACT_POINTS,
+    delayMs: config.CASSANDRA_RETRY_DELAY_MS,
+    keyspace: config.CASSANDRA_KEYSPACE,
+    localDataCenter: config.CASSANDRA_LOCAL_DATACENTER,
+    port: config.CASSANDRA_PORT,
   });
   const neo4j = await connectToNeo4j({
-    attempts: config.neo4jConnectRetries,
-    database: config.neo4jDatabase,
-    delayMs: config.neo4jRetryDelayMs,
-    password: config.neo4jPassword,
-    uri: config.neo4jUri,
-    username: config.neo4jUsername,
+    attempts: config.NEO4J_CONNECT_RETRIES,
+    database: config.NEO4J_DATABASE,
+    delayMs: config.NEO4J_RETRY_DELAY_MS,
+    password: config.NEO4J_PASSWORD,
+    uri: config.NEO4J_URI,
+    username: config.NEO4J_USERNAME,
   });
 
   try {

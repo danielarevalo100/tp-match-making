@@ -1,25 +1,29 @@
+import { AppError } from "../../../../../shared/errors.js";
+
 export type LeaderboardMissingPart = "mode" | "region" | "season";
 
-export class LeaderboardNotFoundError extends Error {
+export class LeaderboardNotFoundError extends AppError {
   constructor(
     readonly missing: LeaderboardMissingPart,
     readonly id: string,
   ) {
-    super(`There is no leaderboard for ${missing} ${id}.`);
-    this.name = "LeaderboardNotFoundError";
+    super(404, "LEADERBOARD_NOT_FOUND", `There is no leaderboard for ${missing} ${id}.`, {
+      id,
+      missing,
+    });
   }
 }
 
-export class ModeNotRankedError extends Error {
+export class ModeNotRankedError extends AppError {
   constructor(readonly mode: string) {
-    super(`Game mode ${mode} is not ranked, so it has no leaderboard.`);
-    this.name = "ModeNotRankedError";
+    super(422, "MODE_NOT_RANKED", `Game mode ${mode} is not ranked, so it has no leaderboard.`);
   }
 }
 
-export class PlayerNotRankedError extends Error {
+export class PlayerNotRankedError extends AppError {
   constructor(readonly playerId: string) {
-    super(`Player ${playerId} is not ranked in this leaderboard.`);
-    this.name = "PlayerNotRankedError";
+    super(404, "PLAYER_NOT_RANKED", `Player ${playerId} is not ranked in this leaderboard.`, {
+      playerId,
+    });
   }
 }

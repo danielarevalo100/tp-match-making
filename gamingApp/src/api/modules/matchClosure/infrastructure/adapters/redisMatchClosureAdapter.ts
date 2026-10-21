@@ -14,6 +14,15 @@ import {
 
 const releaseMarkerTtlSeconds = 86_400;
 
+/** Replies shared by both scripts when the match cannot be closed: `NOT_LIVE` or `CONFLICT|...`. */
+function throwFailedReply(matchId: string, reply: string): never {
+  if (reply === "NOT_LIVE") throw new MatchClosureConflictError(matchId, "not_live");
+  if (reply.startsWith("CONFLICT|")) {
+    throw new MatchClosureConflictError(matchId, reply.slice("CONFLICT|".length));
+  }
+  throw new Error(`Unexpected match closure reply: ${reply}`);
+}
+
 export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMatchClosurePort {
   async beginClosing(matchId: string, closureId: string): Promise<RedisClosingOutcome> {
     const reply = await this.run("matchClosure.beginClosing", async () =>
@@ -30,11 +39,7 @@ export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMa
     if (reply === "CLOSING") return "closing";
     if (reply === "REPLAYED") return "replayed";
     if (reply === "RELEASED") return "released";
-    if (reply === "NOT_LIVE") throw new MatchClosureConflictError(matchId, "not_live");
-    if (reply.startsWith("CONFLICT|")) {
-      throw new MatchClosureConflictError(matchId, reply.slice("CONFLICT|".length));
-    }
-    throw new Error(`Unexpected begin-closing reply: ${reply}`);
+    return throwFailedReply(matchId, reply);
   }
 
   rollbackClosing(matchId: string, closureId: string): Promise<void> {
@@ -68,10 +73,6 @@ export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMa
     );
     if (reply === "RELEASED") return "released";
     if (reply === "ALREADY_RELEASED") return "already_released";
-    if (reply === "NOT_LIVE") throw new MatchClosureConflictError(matchId, "not_live");
-    if (reply.startsWith("CONFLICT|")) {
-      throw new MatchClosureConflictError(matchId, reply.slice("CONFLICT|".length));
-    }
-    throw new Error(`Unexpected release reply: ${reply}`);
+    return throwFailedReply(matchId, reply);
   }
 }

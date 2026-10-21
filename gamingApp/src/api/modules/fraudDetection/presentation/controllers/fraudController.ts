@@ -20,7 +20,7 @@ function matchFixingCriteria(query: {
   limit: number;
   minBenefitRatio: number;
   minMatches: number;
-  mode?: string | undefined;
+  mode?: string;
 }): MatchFixingCriteria {
   return {
     limit: query.limit,

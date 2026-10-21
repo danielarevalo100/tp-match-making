@@ -90,10 +90,7 @@ export class MatchEventService {
     let repaired = 0;
     let pageState: string | undefined;
     do {
-      const page = await this.log.list(matchId, {
-        limit: reconcilePageSize,
-        ...(pageState ? { pageState } : {}),
-      });
+      const page = await this.log.list(matchId, { limit: reconcilePageSize, pageState });
       read += page.events.length;
       const gameplayEvents = page.events.filter(isGameplayEvent);
       if (gameplayEvents.length > 0) repaired += await this.scoreboard.applyMany(gameplayEvents);

@@ -17,8 +17,8 @@ import {
 import type { CatalogRepositoryPort, PlayersRepositoryPort } from "../ports/playersPorts.js";
 
 export type RegisterPlayerInput = {
-  avatarUrl?: string | undefined;
-  birthDate?: Date | undefined;
+  avatarUrl?: string;
+  birthDate?: Date;
   country: string;
   email: string;
   password: string;
@@ -26,11 +26,11 @@ export type RegisterPlayerInput = {
 };
 
 export type UpdatePlayerProfileInput = {
-  avatarUrl?: string | null | undefined;
-  birthDate?: Date | null | undefined;
-  country?: string | undefined;
-  email?: string | undefined;
-  username?: string | undefined;
+  avatarUrl?: string | null;
+  birthDate?: Date | null;
+  country?: string;
+  email?: string;
+  username?: string;
 };
 
 export type ListPlayersInput = {

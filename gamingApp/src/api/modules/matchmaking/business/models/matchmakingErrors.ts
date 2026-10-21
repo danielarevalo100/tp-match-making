@@ -1,68 +1,74 @@
+import { AppError } from "../../../../../shared/errors.js";
 import type { QueueTicket } from "./queueTicket.js";
 
-export class PlayerNotFoundError extends Error {
+export class PlayerNotFoundError extends AppError {
   constructor(playerId: string) {
-    super(`Player ${playerId} was not found.`);
-    this.name = "PlayerNotFoundError";
+    super(404, "PLAYER_NOT_FOUND", `Player ${playerId} was not found.`);
   }
 }
 
-export class AccountNotActiveError extends Error {
+export class AccountNotActiveError extends AppError {
   constructor(readonly accountStatus: string) {
-    super(`The account is ${accountStatus}; only active accounts can join a queue.`);
-    this.name = "AccountNotActiveError";
+    super(
+      422,
+      "ACCOUNT_NOT_ACTIVE",
+      `The account is ${accountStatus}; only active accounts can join a queue.`,
+      { accountStatus },
+    );
   }
 }
 
-export class ModeNotAvailableError extends Error {
+export class ModeNotAvailableError extends AppError {
   constructor(mode: string) {
-    super(`Game mode ${mode} does not exist or is not active.`);
-    this.name = "ModeNotAvailableError";
+    super(422, "MODE_NOT_AVAILABLE", `Game mode ${mode} does not exist or is not active.`);
   }
 }
 
-export class RegionNotFoundError extends Error {
+export class RegionNotFoundError extends AppError {
   constructor(region: string) {
-    super(`Region ${region} does not exist or is not active.`);
-    this.name = "RegionNotFoundError";
+    super(422, "REGION_NOT_FOUND", `Region ${region} does not exist or is not active.`);
   }
 }
 
-export class PlayerSanctionedError extends Error {
+export class PlayerSanctionedError extends AppError {
   constructor(
     readonly sanctionId: string,
     readonly sanctionType: string,
     readonly endsAt: Date | null,
   ) {
-    super("The player has a sanction in force and cannot join a queue.");
-    this.name = "PlayerSanctionedError";
+    super(403, "PLAYER_SANCTIONED", "The player has a sanction in force and cannot join a queue.", {
+      endsAt,
+      sanctionId,
+      sanctionType,
+    });
   }
 }
 
-export class AlreadyInQueueError extends Error {
+export class AlreadyInQueueError extends AppError {
   constructor(readonly ticket: QueueTicket) {
-    super(`The player is already in queue ${ticket.mode}/${ticket.region}.`);
-    this.name = "AlreadyInQueueError";
+    const message = `The player is already in queue ${ticket.mode}/${ticket.region}.`;
+    super(409, "ALREADY_IN_QUEUE", message, { ticket });
   }
 }
 
-export class AlreadyInMatchError extends Error {
+export class AlreadyInMatchError extends AppError {
   constructor(readonly matchId: string) {
-    super(`The player is already in match ${matchId}.`);
-    this.name = "AlreadyInMatchError";
+    super(409, "ALREADY_IN_MATCH", `The player is already in match ${matchId}.`, { matchId });
   }
 }
 
-export class TicketNotFoundError extends Error {
+export class TicketNotFoundError extends AppError {
   constructor(playerId: string) {
-    super(`Player ${playerId} is not in any queue.`);
-    this.name = "TicketNotFoundError";
+    super(404, "TICKET_NOT_FOUND", `Player ${playerId} is not in any queue.`);
   }
 }
 
-export class FormationContendedError extends Error {
+export class FormationContendedError extends AppError {
   constructor(mode: string, region: string) {
-    super(`Could not reserve a group in ${mode}/${region}: players kept leaving the queue.`);
-    this.name = "FormationContendedError";
+    super(
+      409,
+      "FORMATION_CONTENDED",
+      `Could not reserve a group in ${mode}/${region}: players kept leaving the queue.`,
+    );
   }
 }

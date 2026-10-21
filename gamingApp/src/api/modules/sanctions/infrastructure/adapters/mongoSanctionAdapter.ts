@@ -1,6 +1,9 @@
 import type { Collection, Db } from "mongodb";
 
-import { BaseMongoAdapter } from "../../../../../infrastructure/mongo/baseMongoAdapter.js";
+import {
+  BaseMongoAdapter,
+  isDuplicateKeyError,
+} from "../../../../../infrastructure/mongo/baseMongoAdapter.js";
 import { mongoCollections } from "../../../../../shared/storageKeys.js";
 import type {
   AdministratorInfo,
@@ -11,7 +14,6 @@ import type {
 } from "../../business/models/sanction.js";
 import type { SanctionRepositoryPort } from "../../business/ports/sanctionPorts.js";
 import {
-  isDuplicateKey,
   toSanctionDocument,
   toSanctionRecord,
   type SanctionDocument,
@@ -53,7 +55,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
         await this.sanctions.insertOne(toSanctionDocument(sanction));
         return true;
       } catch (error: unknown) {
-        if (isDuplicateKey(error)) return false;
+        if (isDuplicateKeyError(error)) return false;
         throw error;
       }
     });
@@ -121,18 +123,9 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
         { _id: sanctionId },
         {
           $addToSet: { "reversal.completedSteps": step },
-          $set: {
-            "reversal.updatedAt": at,
-            ...(heldBoards
-              ? {
-                  "reversal.heldBoards": heldBoards.map((board) => ({
-                    mode: board.mode,
-                    playerIds: [...board.playerIds],
-                    seasonId: board.seasonId,
-                  })),
-                }
-              : {}),
-          },
+          $set: heldBoards
+            ? { "reversal.heldBoards": heldBoards, "reversal.updatedAt": at }
+            : { "reversal.updatedAt": at },
         },
       );
     });

@@ -12,7 +12,7 @@ export interface MatchGraphPort {
   findOpposingPairs(query: {
     limit: number;
     minMatches: number;
-    mode?: string | undefined;
+    mode?: string;
     since: Date;
   }): Promise<OpposingPair[]>;
 }

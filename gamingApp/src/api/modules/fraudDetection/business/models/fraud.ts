@@ -14,7 +14,7 @@ export type MatchFixingCriteria = {
   minBenefitRatio: number;
   /** Minimum number of decided matches the two players played against each other. */
   minMatches: number;
-  mode?: string | undefined;
+  mode?: string;
   since: Date;
 };
 

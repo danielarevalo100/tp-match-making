@@ -14,17 +14,13 @@ export class SanctionController {
 
   readonly create = async (request: Request, response: Response): Promise<void> => {
     const body = createSanctionSchema.parse(request.body as unknown);
+    // The service uses null for "not given".
     const outcome = await this.sanctions.sanction({
-      administratorId: body.administratorId,
+      ...body,
       description: body.description ?? null,
       endsAt: body.endsAt ?? null,
-      matchIds: body.matchIds,
-      playerId: body.playerId,
-      reason: body.reason,
       reportId: body.reportId ?? null,
-      sanctionId: body.sanctionId,
       startsAt: body.startsAt ?? null,
-      type: body.type,
     });
     response
       .status(reversalStatusCode(outcome.sanction, outcome.created ? 201 : 200))

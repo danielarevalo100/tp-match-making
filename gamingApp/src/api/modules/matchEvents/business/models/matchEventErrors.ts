@@ -1,16 +1,18 @@
-export class MatchNotLiveError extends Error {
+import { AppError } from "../../../../../shared/errors.js";
+
+export class MatchNotLiveError extends AppError {
   constructor(matchId: string) {
-    super(`There is no live match ${matchId}.`);
-    this.name = "MatchNotLiveError";
+    super(404, "MATCH_NOT_LIVE", `There is no live match ${matchId}.`);
   }
 }
 
-export class PlayerNotInMatchError extends Error {
+export class PlayerNotInMatchError extends AppError {
   constructor(
     readonly matchId: string,
     readonly playerId: string,
   ) {
-    super(`Player ${playerId} is not part of match ${matchId}.`);
-    this.name = "PlayerNotInMatchError";
+    super(422, "PLAYER_NOT_IN_MATCH", `Player ${playerId} is not part of match ${matchId}.`, {
+      playerId,
+    });
   }
 }

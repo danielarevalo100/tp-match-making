@@ -1,22 +1,21 @@
+import { AppError } from "../../../../../shared/errors.js";
+
 export type ConflictField = "email" | "username";
 
-export class PlayerNotFoundError extends Error {
+export class PlayerNotFoundError extends AppError {
   constructor(playerId: string) {
-    super(`Player ${playerId} was not found.`);
-    this.name = "PlayerNotFoundError";
+    super(404, "PLAYER_NOT_FOUND", `Player ${playerId} was not found.`);
   }
 }
 
-export class PlayerConflictError extends Error {
+export class PlayerConflictError extends AppError {
   constructor(readonly field: ConflictField) {
-    super(`A player with that ${field} already exists.`);
-    this.name = "PlayerConflictError";
+    super(409, "PLAYER_CONFLICT", `A player with that ${field} already exists.`, { field });
   }
 }
 
-export class RegionNotFoundError extends Error {
+export class RegionNotFoundError extends AppError {
   constructor(country: string) {
-    super(`No active region contains country ${country}.`);
-    this.name = "RegionNotFoundError";
+    super(422, "REGION_NOT_FOUND", `No active region contains country ${country}.`);
   }
 }

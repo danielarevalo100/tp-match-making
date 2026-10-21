@@ -1,4 +1,4 @@
-import { MongoError, type Db } from "mongodb";
+import { MongoError, MongoServerError, type Db } from "mongodb";
 
 import { BaseAdapter } from "../baseAdapter.js";
 
@@ -12,4 +12,9 @@ export abstract class BaseMongoAdapter extends BaseAdapter {
   protected isDriverError(error: unknown): boolean {
     return error instanceof MongoError;
   }
+}
+
+/** A unique index (for example `_id`) rejected the write. */
+export function isDuplicateKeyError(error: unknown): error is MongoServerError {
+  return error instanceof MongoServerError && error.code === 11_000;
 }
