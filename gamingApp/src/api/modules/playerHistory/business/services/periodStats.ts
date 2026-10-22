@@ -10,8 +10,8 @@ export const maxRatingPoints = 100;
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 /**
- * Aggregates the matches of `entries` (any order) that ended inside `window`. Derived data: it is
- * always computed from the history, so there is no counter that could drift from it.
+ * Resume las partidas de `entries` (en cualquier orden) que terminaron dentro de `window`. Es un
+ * dato derivado: siempre se calcula desde el historial, así no hay contadores que se desfasen.
  */
 export function summarizePeriod(
   entries: readonly HistoryEntry[],
@@ -58,7 +58,7 @@ export function summarizePeriod(
     deaths,
     draws,
     from: window.from,
-    // With no deaths the ratio is undefined, not infinite.
+    // Sin muertes el ratio no está definido (no es infinito).
     killDeathRatio: deaths > 0 ? round(kills / deaths) : null,
     kills,
     losses,

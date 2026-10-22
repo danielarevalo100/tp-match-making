@@ -1,25 +1,25 @@
 export const leaderboardTopSize = 100;
 export const leaderboardNeighbourCount = 5;
 
-/** A season and mode board: global when `region` is null, otherwise that region's board. */
+/** Tablero de una temporada y modo: global si `region` es null, si no el de esa región. */
 export type LeaderboardBoard = {
   mode: string;
   region: string | null;
   seasonId: string;
 };
 
-/** A player's standing as MongoDB stores it (`players.seasonRatings.<season>.<mode>`). */
+/** Standing de un jugador tal como lo guarda MongoDB (`players.seasonRatings.<season>.<mode>`). */
 export type LeaderboardStanding = {
   mmr: number;
   playerId: string;
   region: string;
-  /** Grows on every change, so an older standing never overwrites a newer one. */
+  /** Crece en cada cambio, así un standing viejo nunca pisa uno más nuevo. */
   revision: number;
 };
 
 /**
- * Position is ordinal (1-based) and follows Redis: higher MMR first, and players with the same
- * MMR ordered by descending player id, so equal ratings still get a stable, distinct position.
+ * La posición es ordinal (desde 1) y sigue a Redis: primero el MMR más alto, y a igual MMR por
+ * playerId descendente, así ratings iguales igual tienen una posición estable y distinta.
  */
 export type RankedPlayer = {
   mmr: number;
@@ -32,7 +32,7 @@ export type RankingSlice = {
   totalPlayers: number;
 };
 
-/** The player's position and the slice of neighbours around it. */
+/** La posición del jugador y los vecinos que tiene alrededor. */
 export type RankingWindow = RankingSlice & {
   position: number;
 };
@@ -47,7 +47,7 @@ export type GameModeInfo = {
   ranked: boolean;
 };
 
-/** Profile data MongoDB adds to the ids and scores that come from Redis. */
+/** Datos de perfil que MongoDB agrega a los ids y puntajes que vienen de Redis. */
 export type PlayerSummary = {
   country: string;
   gamesPlayed: number | null;
@@ -76,9 +76,9 @@ export type LeaderboardTop = LeaderboardHeader & {
 };
 
 export type LeaderboardPosition = LeaderboardHeader & {
-  /** Up to five players right above, best first. */
+  /** Hasta cinco jugadores justo arriba, el mejor primero. */
   above: LeaderboardEntry[];
-  /** Up to five players right below, best first. */
+  /** Hasta cinco jugadores justo abajo, el mejor primero. */
   below: LeaderboardEntry[];
   player: LeaderboardEntry;
 };

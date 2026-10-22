@@ -70,14 +70,14 @@ describe("sanctions API", () => {
   it("answers 202 when the reversal fails after the sanction is registered; resume completes it", async () => {
     const failed = await request(context.app)
       .post("/sanctions")
-      .set("x-fail-at", "sanctions.revertRating")
+      .set("x-fail-db", "cassandra")
       .send(body);
     const failedSanction = failed.body as SanctionView;
 
     assert.equal(failed.status, 202);
     assert.equal(failedSanction.status, "active");
     assert.equal(failedSanction.reversal.status, "failed");
-    assert.match(failedSanction.reversal.lastError ?? "", /sanctions\.revertRating/);
+    assert.match(failedSanction.reversal.lastError ?? "", /cassandra/);
 
     const resumed = await request(context.app).post(`/sanctions/${sanctionId}/resume`);
     assert.equal(resumed.status, 200);
@@ -88,17 +88,14 @@ describe("sanctions API", () => {
     assert.deepEqual((fetched.body as SanctionView).reversal.pendingMatchIds, []);
   });
 
-  it("maps a failure before the sanction is written to a 500 with the step", async () => {
+  it("maps a failure before the sanction is written to a 500 with the database", async () => {
     const response = await request(context.app)
       .post("/sanctions")
-      .set("x-fail-at", "sanctions.insertSanction")
+      .set("x-fail-db", "mongo")
       .send(body);
 
     assert.equal(response.status, 500);
-    assert.deepEqual(response.body as ErrorBody, {
-      error: "INJECTED_FAILURE",
-      step: "sanctions.insertSanction",
-    });
+    assert.deepEqual(response.body as ErrorBody, { error: "INJECTED_FAILURE", engine: "mongo" });
     assert.equal(context.repository.sanctions.size, 0);
   });
 
@@ -164,7 +161,7 @@ describe("sanctions API", () => {
     assert.equal(response.status, 200);
     assert.equal(profile.player.username, "rival1");
     assert.equal(profile.recentMatches.length, 1);
-    // bystander 1600, cheater 1525, rival1 1500, rival2 1475 (no sanction yet).
+    // bystander 1600, cheater 1525, rival1 1500, rival2 1475 (todavía sin sanción).
     assert.deepEqual(profile.leaderboards[0]?.global, { position: 3, totalPlayers: 4 });
     assert.equal(unknown.status, 404);
     assert.equal((unknown.body as ErrorBody).error, "PLAYER_NOT_FOUND");

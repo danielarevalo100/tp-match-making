@@ -23,9 +23,9 @@ export class MongoMatchAdapter extends BaseMongoAdapter implements MatchReposito
     this.matches = database.collection<MatchDocument>(mongoCollections.matches);
   }
 
-  // Keyed by the shared matchId, so retrying never creates a second document.
+  // La clave es el matchId compartido, así un reintento nunca crea un segundo documento.
   create(match: MatchRecord): Promise<void> {
-    return this.run("matchmaking.createMatch", async () => {
+    return this.write(async () => {
       await this.matches.updateOne(
         { _id: match.id },
         {
@@ -44,7 +44,7 @@ export class MongoMatchAdapter extends BaseMongoAdapter implements MatchReposito
   }
 
   delete(matchId: string): Promise<void> {
-    return this.run("matchmaking.deleteMatch", async () => {
+    return this.write(async () => {
       await this.matches.deleteOne({ _id: matchId, status: "in_progress" });
     });
   }

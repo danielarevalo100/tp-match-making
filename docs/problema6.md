@@ -89,7 +89,7 @@ P6 es una consulta: no escribe en dos motores ni necesita compensación.
 | Cassandra caído         | `503 STORAGE_ERROR engine=cassandra`. Nada que deshacer.                                |
 | Proyección interrumpida | Las filas ya escritas son válidas; reanudar con `nextCursor` o repetir desde el inicio. |
 
-Pasos para `x-fail-at`: `playerHistory.findPlayer`, `playerHistory.findActiveSeason`, `playerHistory.findLatest`, `playerHistory.findSince`, `playerHistory.listClosedMatches`, `playerHistory.appendRows`.
+Inyección de fallas: `x-fail-db: cassandra` en `POST /history/projection` hace fallar la primera escritura de filas; repetir la proyección completa el trabajo sin duplicar. Las consultas son solo lecturas: para que fallen hay que detener la base (`docker compose stop cassandra`).
 
 ## Preguntas contrafactuales
 

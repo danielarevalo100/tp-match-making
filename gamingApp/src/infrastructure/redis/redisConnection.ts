@@ -10,7 +10,7 @@ type RedisConnectionOptions = {
 
 export function connectToRedis(options: RedisConnectionOptions): Promise<Redis> {
   return retry(options.attempts, options.delayMs, async () => {
-    // No automatic reconnection while connecting: `retry` decides when to try again.
+    // Sin reconexión automática mientras se conecta: `retry` decide cuándo volver a intentar.
     const client = new Redis(options.url, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
@@ -21,7 +21,7 @@ export function connectToRedis(options: RedisConnectionOptions): Promise<Redis> 
     try {
       await client.connect();
       await client.ping();
-      // Once connected, reconnect by itself if the connection drops.
+      // Una vez conectado, se reconecta solo si se corta la conexión.
       client.options.retryStrategy = (times: number) => Math.min(times * 200, 2_000);
       return client;
     } catch (error: unknown) {

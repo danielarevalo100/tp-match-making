@@ -12,7 +12,6 @@ import {
   AdministratorNotFoundError,
   InvalidSanctionReportError,
   MatchNotReversibleError,
-  SanctionConflictError,
   SanctionNotFoundError,
   SanctionPlayerNotFoundError,
 } from "../models/sanctionErrors.js";
@@ -25,25 +24,26 @@ import type {
   SanctionRepositoryPort,
 } from "../ports/sanctionPorts.js";
 import { affectedSeasons, heldBoards } from "./reversalRules.js";
+import { assertSameSanction, completedCopy, newSanction, toView } from "./sanctionRecords.js";
 
 /**
- * Problem 8: an administrator sanctions a player for cheating and the results of the matches it
- * cheated in are voided.
+ * Problema 8: un administrador sanciona a un jugador por hacer trampa y se anulan los resultados
+ * de las partidas en las que la hizo.
  *
- * The sanction is registered first (MongoDB) and is in force from then on, whatever happens next.
- * The reversal then only moves forward, and every step can be repeated without changing the
- * result, so a failure is resolved by retrying until it completes:
+ * La sanción se registra primero (MongoDB) y queda en vigor desde ese momento, pase lo que pase.
+ * Después la reversión solo avanza, y cada paso se puede repetir sin cambiar el resultado, así
+ * una falla se resuelve reintentando hasta completar:
  *
- *   1. queue        Redis      the player leaves the matchmaking queue
- *   2. hold         Redis      the affected players are held in their leaderboards
- *   3. per match    MongoDB    voided, ratings and season standings reverted
- *                   Cassandra  rows removed from the player history (problem 6)
- *                   Neo4j      match removed from the co-participation graph (problem 7)
- *   4. leaderboard  Redis      one script per board publishes everyone and drops the hold
+ *   1. queue        Redis      el jugador sale de la cola de matchmaking
+ *   2. hold         Redis      los jugadores afectados quedan retenidos en sus leaderboards
+ *   3. por partida  MongoDB    anulada, y ratings y standings de temporada revertidos
+ *                   Cassandra  filas borradas del historial (problema 6)
+ *                   Neo4j      partida borrada del grafo de coparticipación (problema 7)
+ *   4. leaderboard  Redis      un script por tablero publica a todos y quita la retención
  *
- * Each finished step is written to the journal in the sanction document. While the reversal is
- * incomplete the held players keep the board position they had before it, so no leaderboard ever
- * shows results partially voided.
+ * Cada paso terminado se anota en el journal del documento de la sanción. Mientras la reversión
+ * está incompleta, los jugadores retenidos conservan la posición que tenían antes, así ningún
+ * leaderboard muestra resultados anulados a medias.
  */
 export class SanctionService {
   constructor(
@@ -68,14 +68,14 @@ export class SanctionService {
       return { created: true, sanction: await this.revert(record) };
     }
 
-    // A concurrent request with the same id was inserted first: continue that one.
+    // Un pedido concurrente con el mismo id se insertó primero: se continúa ese.
     const stored = await this.sanctions.find(input.sanctionId);
     if (!stored) throw new SanctionNotFoundError(input.sanctionId);
     assertSameSanction(stored, input);
     return { created: false, sanction: await this.revert(stored) };
   }
 
-  /** Continues an incomplete reversal from its journal (after a crash or a failed attempt). */
+  /** Continúa una reversión incompleta desde su journal (después de una caída o un intento fallido). */
   async resume(sanctionId: string): Promise<SanctionView> {
     const record = await this.sanctions.find(sanctionId);
     if (!record) throw new SanctionNotFoundError(sanctionId);
@@ -88,7 +88,7 @@ export class SanctionService {
     return toView(record);
   }
 
-  /** Everything is checked before the sanction is written: a rejected request leaves no trace. */
+  /** Se valida todo antes de escribir la sanción: un pedido rechazado no deja rastro. */
   private async validate(input: SanctionInput): Promise<void> {
     const [playerExists, administrator, report, matches] = await Promise.all([
       this.sanctions.playerExists(input.playerId),
@@ -111,7 +111,7 @@ export class SanctionService {
     for (const matchId of input.matchIds) {
       const match = byId.get(matchId);
       if (!match) throw new MatchNotReversibleError(matchId, "not_found");
-      // A voided match was already reverted by another sanction; including it changes nothing.
+      // Una partida anulada ya la revirtió otra sanción; incluirla no cambia nada.
       const scored = match.status === "closed" && match.scoringStatus === "applied";
       if (!scored && match.status !== "voided") {
         throw new MatchNotReversibleError(matchId, "not_scored");
@@ -123,9 +123,9 @@ export class SanctionService {
   }
 
   /**
-   * Runs the steps the journal does not have yet. A failure is recorded (`failed`, with the
-   * message) and the sanction is returned as it is: retrying the request, or `resume`, continues
-   * from the first missing step.
+   * Ejecuta los pasos que el journal todavía no tiene. Una falla se anota (`failed`, con el
+   * mensaje) y la sanción se devuelve como está: repetir el pedido, o `resume`, continúa desde el
+   * primer paso que falta.
    */
   private async revert(record: SanctionRecord): Promise<SanctionView> {
     if (record.reversal.status === "completed") return toView(record);
@@ -194,15 +194,15 @@ export class SanctionService {
     });
   }
 
-  /** Every write here is idempotent, so a match interrupted half way is simply done again. */
+  /** Todas las escrituras son idempotentes, así una partida que quedó a medias simplemente se rehace. */
   private async revertMatch(
     sanctionId: string,
     match: ReversibleMatch,
     seasons: AffectedSeasons | undefined,
   ): Promise<void> {
     const at = new Date();
-    // Voided first: from now on problems 4, 6 and 7 ignore the match, so nothing projects it again
-    // after its history rows and graph node are deleted below.
+    // Primero se anula: desde ahí los problemas 4, 6 y 7 ignoran la partida, así nada la vuelve a
+    // proyectar después de borrar sus filas del historial y su nodo del grafo.
     await this.results.voidMatch(match.id, sanctionId, at);
     for (const participant of match.participants) {
       await this.results.revertRating({
@@ -220,7 +220,7 @@ export class SanctionService {
     await this.graph.deleteMatch(match.id);
   }
 
-  /** Writes what MongoDB holds now for every held player of the board, in one Redis script. */
+  /** Escribe lo que MongoDB tiene ahora para cada jugador retenido del tablero, en un solo script de Redis. */
   private async releaseBoard(sanctionId: string, board: HeldBoard): Promise<void> {
     const standings = new Map(
       (await this.results.findStandings(board.playerIds, board.seasonId, board.mode)).map(
@@ -234,95 +234,13 @@ export class SanctionService {
       board.playerIds.map((playerId) => ({ playerId, standing: standings.get(playerId) ?? null })),
     );
 
-    // Catch-up: a match of a held player that closed after the read above was published by
-    // problem 4 while the player was still held, so it was skipped. MongoDB has it: publish what
-    // it holds now. The board is already consistent; this only keeps it from lagging, and the
-    // revision check means it can never move anyone backwards.
+    // Puesta al día: una partida de un jugador retenido que se cerró después de la lectura de arriba
+    // la publicó el problema 4 mientras el jugador seguía retenido, así que se salteó. MongoDB la
+    // tiene: se publica lo que tiene ahora. El tablero ya es consistente; esto solo evita que quede
+    // atrasado, y el chequeo de revisión impide que alguien retroceda.
     const current = (
       await this.results.findStandings(board.playerIds, board.seasonId, board.mode)
     ).filter((standing) => standing.gamesPlayed > 0);
     if (current.length > 0) await this.leaderboard.publish(board.seasonId, board.mode, current);
   }
-}
-
-function newSanction(input: SanctionInput, now: Date): SanctionRecord {
-  return {
-    administratorId: input.administratorId,
-    createdAt: now,
-    description: input.description,
-    endsAt: input.endsAt,
-    id: input.sanctionId,
-    matchIds: [...input.matchIds],
-    playerId: input.playerId,
-    reason: input.reason,
-    reportId: input.reportId,
-    reversal: {
-      attempts: 0,
-      completedAt: null,
-      completedSteps: [],
-      heldBoards: [],
-      lastError: null,
-      revertedMatchIds: [],
-      status: "pending",
-      updatedAt: now,
-    },
-    startsAt: input.startsAt ?? now,
-    status: "active",
-    type: input.type,
-  };
-}
-
-/** A retry must describe the same sanction; otherwise the id is being reused by mistake. */
-function assertSameSanction(record: SanctionRecord, input: SanctionInput): void {
-  const sameMatches =
-    JSON.stringify([...record.matchIds].sort()) === JSON.stringify([...input.matchIds].sort());
-  const same =
-    record.playerId === input.playerId &&
-    record.administratorId === input.administratorId &&
-    record.type === input.type &&
-    record.reportId === input.reportId &&
-    (record.endsAt?.getTime() ?? null) === (input.endsAt?.getTime() ?? null) &&
-    sameMatches;
-  if (!same) throw new SanctionConflictError(record.id);
-}
-
-function completedCopy(record: SanctionRecord): SanctionRecord {
-  return {
-    ...record,
-    reversal: {
-      ...record.reversal,
-      completedAt: new Date(),
-      completedSteps: ["queue", "hold", "leaderboard"],
-      lastError: null,
-      revertedMatchIds: [...record.matchIds],
-      status: "completed",
-    },
-  };
-}
-
-function toView(record: SanctionRecord): SanctionView {
-  const reverted = new Set(record.reversal.revertedMatchIds);
-  return {
-    administratorId: record.administratorId,
-    createdAt: record.createdAt,
-    description: record.description,
-    endsAt: record.endsAt,
-    matchIds: record.matchIds,
-    playerId: record.playerId,
-    reason: record.reason,
-    reportId: record.reportId,
-    reversal: {
-      attempts: record.reversal.attempts,
-      completedAt: record.reversal.completedAt,
-      completedSteps: record.reversal.completedSteps,
-      lastError: record.reversal.lastError,
-      pendingMatchIds: record.matchIds.filter((matchId) => !reverted.has(matchId)),
-      revertedMatchIds: record.reversal.revertedMatchIds,
-      status: record.reversal.status,
-    },
-    sanctionId: record.id,
-    startsAt: record.startsAt,
-    status: record.status,
-    type: record.type,
-  };
 }

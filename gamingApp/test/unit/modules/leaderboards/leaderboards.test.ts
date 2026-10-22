@@ -20,7 +20,7 @@ const season = "2026-S2";
 const mode = "ranked_1v1";
 const regions = ["NA", "LATAM", "EU"] as const;
 
-/** Deterministic ids so ties between equal ratings have a known order. */
+/** Ids determinísticos, así los empates de rating tienen un orden conocido. */
 function playerId(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 }
@@ -29,7 +29,7 @@ function build(players = 150) {
   const ranking = new InMemoryLeaderboardRanking();
   const directory = new InMemoryLeaderboardDirectory();
   const standings = Array.from({ length: players }, (_, index) => ({
-    // Player 0 has the best rating; every rating is distinct.
+    // El jugador 0 tiene el mejor rating; todos los ratings son distintos.
     mmr: 3_000 - index * 10,
     playerId: playerId(index),
     region: regions[index % regions.length] as string,

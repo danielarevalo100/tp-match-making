@@ -164,7 +164,7 @@ leaderboard.listMembers     leaderboard.remove
 matchClosure.findLeaderboardSeason  matchClosure.findStandings  matchClosure.markLeaderboard
 ```
 
-Ejemplo: `x-fail-at: leaderboard.publish` en un `POST /matches/:id/finish` deja `scoringStatus=applied` y `leaderboardStatus=pending`; repetir el mismo `finish` publica.
+Ejemplo: `x-fail-db: redis` en un `POST /leaderboards/:mode/:season/rebuild` hace fallar la primera publicación y el tablero queda como estaba; repetir el rebuild publica todo. Si la publicación falla al cerrar una partida (P4), el cierre deja `scoringStatus=applied` y `leaderboardStatus=pending`, y repetir el mismo `finish` publica (lo cubren los tests de `matchClosure.test.ts`).
 
 ## Simulación y resultados
 

@@ -1,8 +1,9 @@
-export type StorageEngine = "mongo" | "redis" | "cassandra" | "neo4j";
+export const storageEngines = ["mongo", "redis", "cassandra", "neo4j"] as const;
+export type StorageEngine = (typeof storageEngines)[number];
 
 /**
- * Base of every business error. The error handler answers with `status` and the body
- * `{ error: code, message, ...details }`, so each error only declares those values.
+ * Base de todos los errores de negocio. El error handler responde con `status` y el cuerpo
+ * `{ error: code, message, ...details }`, así cada error solo declara esos valores.
  */
 export class AppError extends Error {
   constructor(
@@ -16,20 +17,21 @@ export class AppError extends Error {
   }
 }
 
+/** Falla simulada con el header `x-fail-db`: la escritura no llegó a la base. */
 export class InjectedFailureError extends Error {
-  constructor(readonly step: string) {
-    super(`Injected failure at step ${step}.`);
+  constructor(readonly engine: StorageEngine) {
+    super(`Injected ${engine} failure.`);
     this.name = "InjectedFailureError";
   }
 }
 
+/** Error real del driver de una base (caída, timeout...). */
 export class StorageError extends Error {
   constructor(
     readonly engine: StorageEngine,
-    readonly step: string,
     cause: unknown,
   ) {
-    super(`${engine} failed at step ${step}.`, { cause });
+    super(`${engine} failed.`, { cause });
     this.name = "StorageError";
   }
 }

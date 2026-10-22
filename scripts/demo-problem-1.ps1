@@ -1,12 +1,12 @@
-# Problem 1 demo: joining a matchmaking queue.
+# Demo del problema 1: entrar a una cola de matchmaking.
 #
-# Needs the Compose stack running (mongodb, redis and gaming-app). Registers a throwaway player and walks through every
-# rule: success, idempotent retry, second queue, active match, sanction in
-# force and a concurrent burst. Cleans up after itself.
+# Necesita el stack de Compose corriendo (mongodb, redis y gaming-app). Registra un jugador
+# descartable y recorre todas las reglas: éxito, reintento idempotente, segunda cola, partida
+# activa, sanción en vigor y una ráfaga concurrente. Limpia lo que crea al terminar.
 #
 #   .\scripts\demo-problem-1.ps1
 #
-# Overrides (environment variables): PLAYERS_URL, MATCHMAKING_URL, MODE,
+# Se puede cambiar (variables de entorno): PLAYERS_URL, MATCHMAKING_URL, MODE,
 # MONGO_ROOT_USERNAME, MONGO_ROOT_PASSWORD
 
 $ErrorActionPreference = "Stop"

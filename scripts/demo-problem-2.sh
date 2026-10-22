@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Problem 2 demo: forming a match (saga Redis reserve -> Mongo create -> Redis commit).
+# Demo del problema 2: formar una partida (saga Redis reserve -> Mongo create -> Redis commit).
 #
-# Needs the Compose stack running (mongodb, redis and gaming-app). Uses throwaway
-# players in the NA queue of ranked_1v1 and cleans up after itself. Shows:
-#   1. happy path
-#   2. rating range that widens with the wait
-#   3. failure creating the match in Mongo      -> everyone back in the queue, same seniority
-#   4. failure committing the match in Redis    -> same
-#   5. a player leaves during the formation     -> the others go back, seniority kept
-#   6. a formation left half-done is recovered, and recovering twice changes nothing
+# Necesita el stack de Compose corriendo (mongodb, redis y gaming-app). Usa jugadores
+# descartables en la cola NA de ranked_1v1 y limpia al terminar. Muestra:
+#   1. camino feliz
+#   2. el rango de rating que se amplía con la espera
+#   3. falla al crear la partida en Mongo       -> todos vuelven a la cola, misma antigüedad
+#   4. falla al reservar los jugadores en Redis -> no cambia nada
+#   5. un jugador se va durante la formación    -> los demás vuelven, conservan la antigüedad
+#   6. una formación que quedó a medias se recupera, y recuperarla dos veces no cambia nada
 #
 #   ./scripts/demo-problem-2.sh
 #
-# Overrides: APP_URL, MODE, REGION, MONGO_ROOT_USERNAME, MONGO_ROOT_PASSWORD
+# Se puede cambiar: APP_URL, MODE, REGION, MONGO_ROOT_USERNAME, MONGO_ROOT_PASSWORD
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ mongo_eval() {
 
 FAILURES=0
 STATUS=""
-# call METHOD URL [JSON] [extra curl args...] -> sets STATUS, prints the body
+# call MÉTODO URL [JSON] [más args de curl...] -> deja STATUS, imprime el cuerpo
 call() {
   local method="$1" url="$2" data="${3:-}"
   shift 3 || shift $#
@@ -119,11 +119,11 @@ MATCH_ID="$(json_field matchId)"
 mongo_eval "db.matches.deleteOne({_id:'$MATCH_ID'})" >/dev/null; reset_queue
 echo
 
-echo "== 3. Failure creating the match in Mongo (x-fail-at: matchmaking.createMatch)"
+echo "== 3. Failure creating the match in Mongo (x-fail-db: mongo)"
 A=$(new_player 1000); B=$(new_player 1010); enqueue "$A"; enqueue "$B"
 set_seniority "$A" "$OLDER"; set_seniority "$B" "$OLD"
 echo "  queue before: $(queue_state)"
-form -H 'x-fail-at: matchmaking.createMatch'
+form -H 'x-fail-db: mongo'
 expect 500 "formation fails"
 echo "  queue after:  $(queue_state)"
 check "$(queue_state)" "$A $OLDER $B $OLD" "both back in the queue with the original enqueuedAt"
@@ -131,11 +131,12 @@ check "$(redis_cli EXISTS "player:$A:active_match" "player:$B:active_match")" "0
 check "$(match_docs "$A")" "0" "no match document in Mongo"
 echo
 
-echo "== 4. Failure committing in Redis, after Mongo already has the match (x-fail-at: matchmaking.commit)"
-form -H 'x-fail-at: matchmaking.commit'
+echo "== 4. Failure in the first Redis write, the reservation (x-fail-db: redis)"
+form -H 'x-fail-db: redis'
 expect 500 "formation fails"
-check "$(queue_state)" "$A $OLDER $B $OLD" "both back in the queue with the original enqueuedAt"
-check "$(match_docs "$A")" "0" "Mongo match document was compensated (deleted)"
+check "$(queue_state)" "$A $OLDER $B $OLD" "both still in the queue with the original enqueuedAt"
+check "$(redis_cli EXISTS "player:$A:active_match" "player:$B:active_match")" "0" "nobody was reserved"
+check "$(match_docs "$A")" "0" "no match document in Mongo"
 echo
 
 echo "== 5. A reserved player leaves during the formation (x-pause-after-reserve-ms: 3000)"
@@ -155,7 +156,7 @@ echo "== 6. Formation interrupted after the reservation is recovered, idempotent
 reset_queue
 A=$(new_player 1000); B=$(new_player 1010); enqueue "$A"; enqueue "$B"
 set_seniority "$A" "$OLDER"; set_seniority "$B" "$OLD"
-# Simulate a request that stalls right after the reservation (client gives up after 1s).
+# Simula un pedido que se cuelga justo después de la reserva (el cliente abandona al segundo).
 curl -s -m 1 -o /dev/null -X POST -H 'content-type: application/json' -H 'x-pause-after-reserve-ms: 5000' \
   -d "{\"mode\":\"$MODE\",\"region\":\"$REGION\"}" "$APP_URL/matchmaking/matches/form" || true
 echo "  queue while reserved: '$(queue_state)' (players are held by the formation)"
@@ -165,7 +166,7 @@ expect 200 "recover endpoint"
 check "$(queue_state)" "$A $OLDER $B $OLD" "players restored with the original enqueuedAt"
 call POST "$APP_URL/matchmaking/matches/recover" '{"olderThanMs":0}'
 check "$(queue_state)" "$A $OLDER $B $OLD" "second recover changes nothing"
-sleep 5   # the stalled request wakes up, finds its formation rolled back and compensates again
+sleep 5   # el pedido colgado se despierta, encuentra su formación revertida y vuelve a compensar
 check "$(queue_state)" "$A $OLDER $B $OLD" "late request did not break the restored queue"
 check "$(match_docs "$A")" "0" "no orphan match document in Mongo"
 echo

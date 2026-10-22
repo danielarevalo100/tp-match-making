@@ -69,24 +69,24 @@ Business errors extend `AppError` (`shared/errors.ts`) and declare their HTTP st
 
 ## Base adapter
 
-Every adapter method runs through `BaseAdapter.run(step, operation)`:
+Every adapter operation runs through `BaseAdapter.read(operation)` or `BaseAdapter.write(operation)`:
 
-- if the request asked to fail at `step`, it throws `InjectedFailureError` before touching the database;
-- driver errors are wrapped in `StorageError` with the engine and step;
-- business errors are rethrown unchanged.
+- driver errors are wrapped in `StorageError` (`503`, `{"error":"STORAGE_ERROR","engine":"mongo"}`);
+- business errors are rethrown unchanged;
+- `write` also applies the simulated failure described below.
 
 ## Fault injection
 
-Send the `x-fail-at` header with the step name to force a failure at that step:
+Send `x-fail-db: mongo | redis | cassandra | neo4j` to make the **first write** to that database during the request fail before touching it. It fails only once, so compensations that write to the same database still run. Reads are never simulated; to make a database fail completely, stop its container (`docker compose stop cassandra`).
 
 ```bash
 curl -X POST http://localhost:3001/players \
   -H "content-type: application/json" \
-  -H "x-fail-at: players.create" \
+  -H "x-fail-db: mongo" \
   -d '{"username":"player_one","email":"player@example.com","password":"a-secure-password","country":"AR"}'
 ```
 
-The response is `500` with `{"error":"INJECTED_FAILURE","step":"players.create"}`.
+The response is `500` with `{"error":"INJECTED_FAILURE","engine":"mongo"}`. `x-pause-after-reserve-ms` (problem 2 only) pauses a match formation after reserving the players.
 
 ## Modules
 

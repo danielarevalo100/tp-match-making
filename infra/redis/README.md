@@ -56,7 +56,7 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 
 Compensation (reverse order): delete the Mongo match, then Redis `restore`: recreates each ticket and its ZSET entries with the **original `mmr` and `enqueuedAt`** (seniority kept), clears `active_match` and marks `rolled_back`; running it again is a no-op. A reserved player who leaves is recorded as `abandoned:{playerId}` (see `abandonFormationScript`), so commit refuses and restore skips them. If the process dies mid-saga, `recover` compensates formations that stay `reserved`.
 
-Fault injection: header `x-fail-at: matchmaking.reserve | matchmaking.createMatch | matchmaking.commit | matchmaking.restore`; header `x-pause-after-reserve-ms` stalls the saga after the reservation. Demo: `scripts/demo-problem-2.sh`.
+Fault injection: header `x-fail-db: mongo` (match creation fails and the formation is compensated) or `x-fail-db: redis` (the reservation fails and nothing changes); header `x-pause-after-reserve-ms` stalls the saga after the reservation. Demo: `scripts/demo-problem-2.sh`.
 
 Denormalization: the ticket keeps a snapshot of the player's `mmr` read from MongoDB (`players.ratings.<mode>.mmr`, falling back to `game_modes.initialRating`). It cannot go stale while the player is queued: ratings only change when a match closes (problem 4) or a sanction is reverted (problem 8), and a queued player is in neither.
 

@@ -4,11 +4,11 @@ import type {
 } from "../../../playerHistory/business/models/playerHistory.js";
 import type { OpposingPair, ReportedPlayerReports } from "../models/fraud.js";
 
-/** Who played against whom (Neo4j). */
+/** Quién jugó contra quién (Neo4j). */
 export interface MatchGraphPort {
-  /** Idempotent: nodes and relationships are merged by matchId / playerId. */
+  /** Idempotente: nodos y relaciones se unen (MERGE) por matchId / playerId. */
   upsertMatches(matches: readonly ClosedMatch[]): Promise<void>;
-  /** Pairs that played at least `minMatches` decided matches against each other since `since`. */
+  /** Pares que jugaron al menos `minMatches` partidas decididas entre sí desde `since`. */
   findOpposingPairs(query: {
     limit: number;
     minMatches: number;
@@ -17,9 +17,9 @@ export interface MatchGraphPort {
   }): Promise<OpposingPair[]>;
 }
 
-/** Reports filed by players (MongoDB). */
+/** Reportes hechos por jugadores (MongoDB). */
 export interface ReportsPort {
-  /** Players with at least `minReporters` distinct reporters since `since`, with all those reports. */
+  /** Jugadores con al menos `minReporters` autores distintos desde `since`, con esos reportes. */
   findReportedByMany(since: Date, minReporters: number): Promise<ReportedPlayerReports[]>;
 }
 
@@ -27,7 +27,7 @@ export interface PlayerNamesPort {
   findUsernames(playerIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
-/** Same closed matches the history reads: MongoDB `matches` with an applied final scoreboard. */
+/** Las mismas partidas cerradas que lee el historial: `matches` de Mongo con marcador final aplicado. */
 export interface FraudMatchSourcePort {
   listClosedMatches(query: ClosedMatchQuery): Promise<ClosedMatch[]>;
 }

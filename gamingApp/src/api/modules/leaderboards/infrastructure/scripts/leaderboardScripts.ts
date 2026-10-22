@@ -1,6 +1,6 @@
-// KEYS: board (global or regional sorted set).
+// KEYS: tablero (sorted set global o regional).
 // ARGV: limit.
-// Total and slice come from one script so they describe the same moment.
+// Total y porción salen del mismo script, así describen el mismo momento.
 export const topScript = `
 return {
   redis.call('ZCARD', KEYS[1]),
@@ -8,10 +8,10 @@ return {
 }
 `;
 
-// KEYS: board.
+// KEYS: tablero.
 // ARGV: playerId, radius.
-// Rank and neighbours are read atomically: with two separate commands a match closing in between
-// could return neighbours that do not surround the returned position.
+// Rank y vecinos se leen de forma atómica: con dos comandos separados, una partida que se cierra
+// en el medio podría devolver vecinos que no rodean a la posición devuelta.
 export const aroundScript = `
 local rank = redis.call('ZREVRANK', KEYS[1], ARGV[1])
 if not rank then return false end
@@ -21,14 +21,14 @@ local rows = redis.call('ZREVRANGE', KEYS[1], first, rank + tonumber(ARGV[2]), '
 return { rank, first, redis.call('ZCARD', KEYS[1]), rows }
 `;
 
-// KEYS: global board, members hash (playerId -> "revision|region"), held hash (problem 8).
-// ARGV: regional key prefix, then playerId, mmr, region, revision for each standing.
-// The members hash remembers which regional board holds each player, so a region change moves the
-// player instead of leaving them in two boards. A standing older than the stored revision is
-// skipped, which makes retries and out-of-order publications harmless. A player held by a sanction
-// reversal (problem 8) is skipped too: the reversal publishes it when it finishes, so the board
-// never shows a reversal half applied. The old regional key is built from the prefix: fine on a
-// single Redis node, a cluster would need hash tags.
+// KEYS: tablero global, hash de miembros (playerId -> "revision|region"), hash de retenidos (problema 8).
+// ARGV: prefijo de las claves regionales, y por cada standing: playerId, mmr, region, revision.
+// El hash de miembros recuerda en qué tablero regional está cada jugador, así un cambio de región
+// lo mueve en lugar de dejarlo en dos tableros. Un standing más viejo que la revisión guardada se
+// saltea, lo que hace inofensivos los reintentos y las publicaciones fuera de orden. Un jugador
+// retenido por una reversión de sanción (problema 8) también se saltea: la reversión lo publica al
+// terminar, así el tablero nunca muestra una reversión a medias. La clave regional vieja se arma
+// con el prefijo: sirve en un solo nodo de Redis, un cluster necesitaría hash tags.
 export const publishScript = `
 local published = 0
 for i = 2, #ARGV, 4 do
@@ -41,7 +41,7 @@ for i = 2, #ARGV, 4 do
     storedRegion = string.sub(stored, separator + 1)
   end
   if not redis.call('HGET', KEYS[3], playerId) and tonumber(revision) >= storedRevision then
-    -- An empty region is the tombstone a sanction reversal leaves when it removes a player.
+    -- Una región vacía es la marca que deja una reversión de sanción al sacar a un jugador.
     if storedRegion and storedRegion ~= '' and storedRegion ~= region then
       redis.call('ZREM', ARGV[1] .. storedRegion, playerId)
     end
@@ -54,9 +54,9 @@ end
 return published
 `;
 
-// KEYS: global board, members hash, held hash (problem 8).
-// ARGV: regional key prefix, then the player ids to remove.
-// A player held by a sanction reversal stays: the reversal decides what the board shows for it.
+// KEYS: tablero global, hash de miembros, hash de retenidos (problema 8).
+// ARGV: prefijo de las claves regionales, y los ids de los jugadores a sacar.
+// Un jugador retenido por una reversión de sanción se queda: la reversión decide qué muestra.
 export const removeScript = `
 local removed = 0
 for i = 2, #ARGV do
@@ -74,11 +74,11 @@ end
 return removed
 `;
 
-// Problem 8, before any rating is reverted.
-// KEYS: holds set ("holdId|playerId"), held hash (playerId -> number of holds).
-// ARGV: holdId, then the player ids to hold.
-// The set makes the hold idempotent (a retry does not count twice) and the counter lets two
-// reversals that touch the same player hold it at the same time.
+// Problema 8, antes de revertir cualquier rating.
+// KEYS: set de retenciones ("holdId|playerId"), hash de retenidos (playerId -> cantidad de retenciones).
+// ARGV: holdId, y los ids de los jugadores a retener.
+// El set hace idempotente la retención (un reintento no cuenta dos veces) y el contador permite
+// que dos reversiones que tocan al mismo jugador lo retengan al mismo tiempo.
 export const holdScript = `
 local held = 0
 for i = 2, #ARGV do
@@ -90,15 +90,15 @@ end
 return held
 `;
 
-// Problem 8, last step of a sanction reversal: one call per board, so a reader sees either none
-// or all of the reversal in that board.
-// KEYS: global board, members hash, holds set, held hash.
-// ARGV: regional key prefix, holdId, then playerId, mmr, region, revision, action per player.
-// action: "publish" (the player still has matches in the season), "remove" (every match it played
-// in the season was voided) or "release" (no standing: only the hold is dropped).
-// The hold is dropped first; a player that another reversal still holds is left for that one. A
-// removal keeps "revision|" in the members hash as a tombstone, so a publication older than the
-// removal cannot bring the player back.
+// Problema 8, último paso de la reversión de una sanción: una llamada por tablero, así un lector
+// ve toda la reversión en ese tablero o nada.
+// KEYS: tablero global, hash de miembros, set de retenciones, hash de retenidos.
+// ARGV: prefijo de las claves regionales, holdId, y por jugador: playerId, mmr, region, revision, acción.
+// Acción: "publish" (al jugador le quedan partidas en la temporada), "remove" (se anularon todas
+// las que jugó en la temporada) o "release" (no tiene standing: solo se quita la retención).
+// Primero se quita la retención; a un jugador que otra reversión sigue reteniendo lo publica esa.
+// Al sacar a un jugador queda "revision|" en el hash de miembros como marca, así una publicación
+// más vieja que la remoción no lo puede volver a agregar.
 export const releaseScript = `
 local applied = 0
 for i = 3, #ARGV, 5 do

@@ -20,7 +20,7 @@ import {
   topScript,
 } from "../scripts/leaderboardScripts.js";
 
-// Bounds the arguments of a single script call; each call is still atomic on its own.
+// Acota los argumentos de una llamada al script; cada llamada sigue siendo atómica.
 const writeBatchSize = 500;
 
 function boardKey(board: LeaderboardBoard): string {
@@ -29,7 +29,7 @@ function boardKey(board: LeaderboardBoard): string {
     : redisKeys.leaderboardRegional(board.seasonId, board.mode, board.region);
 }
 
-/** Turns a WITHSCORES reply into ranked players; `firstRank` is the 0-based rank of the first. */
+/** Convierte una respuesta WITHSCORES en jugadores rankeados; `firstRank` es el rank (desde 0) del primero. */
 function toRankedPlayers(rows: readonly string[], firstRank: number): RankedPlayer[] {
   const players: RankedPlayer[] = [];
   for (let index = 0; index + 1 < rows.length; index += 2) {
@@ -50,7 +50,7 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
   return result;
 }
 
-/** What the release script does with a held player (see `releaseScript`). */
+/** Qué hace el script de release con un jugador retenido (ver `releaseScript`). */
 function releaseAction(entry: HeldStanding): "publish" | "release" | "remove" {
   if (!entry.standing) return "release";
   return entry.standing.gamesPlayed > 0 ? "publish" : "remove";
@@ -61,7 +61,7 @@ export class RedisLeaderboardAdapter
   implements LeaderboardRankingPort, MatchLeaderboardPort, ReversalLeaderboardPort
 {
   top(board: LeaderboardBoard, limit: number): Promise<RankingSlice> {
-    return this.run("leaderboard.top", async () => {
+    return this.read(async () => {
       const [total, rows] = (await this.redis.eval(
         topScript,
         1,
@@ -73,7 +73,7 @@ export class RedisLeaderboardAdapter
   }
 
   around(board: LeaderboardBoard, playerId: string, radius: number): Promise<RankingWindow | null> {
-    return this.run("leaderboard.around", async () => {
+    return this.read(async () => {
       const reply = (await this.redis.eval(
         aroundScript,
         1,
@@ -92,7 +92,7 @@ export class RedisLeaderboardAdapter
     mode: string,
     standings: readonly LeaderboardStanding[],
   ): Promise<void> {
-    return this.run("leaderboard.publish", async () => {
+    return this.write(async () => {
       for (const batch of chunks(standings, writeBatchSize)) {
         await this.redis.eval(
           publishScript,
@@ -113,7 +113,7 @@ export class RedisLeaderboardAdapter
   }
 
   listMembers(seasonId: string, mode: string): Promise<string[]> {
-    return this.run("leaderboard.listMembers", async () => {
+    return this.read(async () => {
       const members: string[] = [];
       let cursor = "0";
       do {
@@ -133,7 +133,7 @@ export class RedisLeaderboardAdapter
   }
 
   remove(seasonId: string, mode: string, playerIds: readonly string[]): Promise<number> {
-    return this.run("leaderboard.remove", async () => {
+    return this.write(async () => {
       let removed = 0;
       for (const batch of chunks(playerIds, writeBatchSize)) {
         removed += Number(
@@ -152,14 +152,14 @@ export class RedisLeaderboardAdapter
     });
   }
 
-  /** Problem 8: from now on publications skip these players until `release` (idempotent). */
+  /** Problema 8: desde ahora las publicaciones saltean a estos jugadores hasta `release` (idempotente). */
   hold(
     seasonId: string,
     mode: string,
     holdId: string,
     playerIds: readonly string[],
   ): Promise<void> {
-    return this.run("leaderboard.hold", async () => {
+    return this.write(async () => {
       if (playerIds.length === 0) return;
       await this.redis.eval(
         holdScript,
@@ -173,8 +173,8 @@ export class RedisLeaderboardAdapter
   }
 
   /**
-   * Problem 8: drops the hold and writes every held player's current standing. A single script
-   * call for the whole board, never batched, so a reader cannot see part of a reversal.
+   * Problema 8: quita la retención y escribe el standing actual de cada jugador retenido. Una
+   * sola llamada al script por tablero, nunca en lotes, así un lector no ve media reversión.
    */
   release(
     seasonId: string,
@@ -182,7 +182,7 @@ export class RedisLeaderboardAdapter
     holdId: string,
     entries: readonly HeldStanding[],
   ): Promise<void> {
-    return this.run("leaderboard.release", async () => {
+    return this.write(async () => {
       if (entries.length === 0) return;
       await this.redis.eval(
         releaseScript,

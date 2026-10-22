@@ -19,7 +19,7 @@ import {
 
 export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQueuePort {
   enqueue(ticket: QueueTicket): Promise<EnqueueOutcome> {
-    return this.run("matchmaking.enqueue", async () => {
+    return this.write(async () => {
       const reply = (await this.redis.eval(
         enqueueScript,
         4,
@@ -57,13 +57,13 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
   }
 
   findTicket(playerId: string): Promise<QueueTicket | null> {
-    return this.run("matchmaking.findTicket", async () =>
+    return this.read(async () =>
       toQueueTicket(await this.redis.hgetall(redisKeys.ticket(playerId))),
     );
   }
 
   leave(playerId: string): Promise<boolean> {
-    return this.run("matchmaking.leave", async () => {
+    return this.write(async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         const ticket = toQueueTicket(await this.redis.hgetall(redisKeys.ticket(playerId)));
         if (!ticket) return this.abandonFormation(playerId);
@@ -83,7 +83,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
     });
   }
 
-  // No ticket: the player may be reserved in a match that is still forming.
+  // Sin ticket: el jugador puede estar reservado en una partida que todavía se está formando.
   private async abandonFormation(playerId: string): Promise<boolean> {
     const matchId = await this.redis.get(redisKeys.activeMatch(playerId));
     if (!matchId) return false;
@@ -99,7 +99,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
   }
 
   findOldestTicket(mode: string, region: string): Promise<QueueTicket | null> {
-    return this.run("matchmaking.findOldestTicket", async () => {
+    return this.read(async () => {
       const [playerId] = await this.redis.zrange(redisKeys.waitQueue(mode, region), 0, 0);
       if (!playerId) return null;
       return toQueueTicket(await this.redis.hgetall(redisKeys.ticket(playerId)));
@@ -113,7 +113,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
     maxMmr: number,
     limit: number,
   ): Promise<QueueTicket[]> {
-    return this.run("matchmaking.findCandidates", async () => {
+    return this.read(async () => {
       const playerIds = await this.redis.zrangebyscore(
         redisKeys.ratingQueue(mode, region),
         minMmr,
@@ -136,7 +136,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
   }
 
   reserveFormation(matchId: string, tickets: readonly QueueTicket[]): Promise<ReserveOutcome> {
-    return this.run("matchmaking.reserve", async () => {
+    return this.write(async () => {
       const first = tickets[0];
       if (!first) throw new Error("A formation needs at least one ticket.");
 
@@ -174,7 +174,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
     region: string,
     playerIds: readonly string[],
   ): Promise<CommitOutcome> {
-    return this.run("matchmaking.commit", async () => {
+    return this.write(async () => {
       const [status] = (await this.redis.eval(
         commitFormationScript,
         3,
@@ -195,11 +195,11 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
   }
 
   restoreFormation(matchId: string): Promise<RestoreOutcome> {
-    return this.run("matchmaking.restore", async () => {
+    return this.write(async () => {
       const raw = await this.redis.hget(redisKeys.formation(matchId), "tickets");
       if (!raw) return { restored: [], status: "not_found" };
 
-      // The snapshot is immutable, so the keys built here line up with the script.
+      // La foto de los tickets no cambia, así las claves que se arman acá coinciden con el script.
       const snapshot = (JSON.parse(raw) as Record<string, string>[])
         .map((fields) => toQueueTicket(fields))
         .filter((ticket): ticket is QueueTicket => ticket !== null);
@@ -235,7 +235,7 @@ export class RedisQueueAdapter extends BaseRedisAdapter implements MatchmakingQu
   }
 
   findStaleFormations(olderThanMs: number): Promise<string[]> {
-    return this.run("matchmaking.findStaleFormations", async () =>
+    return this.read(async () =>
       this.redis.zrangebyscore(redisKeys.formationIndex, "-inf", Date.now() - olderThanMs),
     );
   }

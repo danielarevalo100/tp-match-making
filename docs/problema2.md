@@ -90,7 +90,10 @@ No hay worker periódico: la formación se dispara por endpoint (se puede agrega
 
 ## Inyección de fallas
 
-- Header `x-fail-at: <paso>` con: `matchmaking.reserve`, `matchmaking.createMatch`, `matchmaking.commit`, `matchmaking.restore` (también `matchmaking.deleteMatch`, `findFormationMode`, `findOldestTicket`, `findCandidates`). Un solo paso por pedido, así la compensación puede ejecutarse.
+- Header `x-fail-db: <base>`: falla la primera escritura en esa base, una sola vez, así la compensación puede ejecutarse.
+  - `x-fail-db: mongo`: falla la creación de la partida (paso B). Se compensa: los jugadores vuelven a la cola con su `enqueuedAt` original.
+  - `x-fail-db: redis`: falla la reserva (paso A). No se escribió nada, los jugadores siguen en la cola.
+  - La falla del commit (paso C) se prueba en los tests unitarios (`matchFormation.test.ts`).
 - Header `x-pause-after-reserve-ms: <ms>` (máx. 30 000): frena la saga entre la reserva y la creación; sirve para simular un abandono o una request lenta. Se guarda en `requestContext.pauseAfterReserveMs`.
 
 ## Tests y demo
@@ -113,7 +116,7 @@ gamingApp/src/api/modules/matchmaking/
   infrastructure/adapters/mongoEligibilityAdapter.ts  + findFormationMode
   presentation/controllers/matchFormationController.ts, schemas/formationSchema.ts
 gamingApp/src/composition/matchmakingComposition.ts   cableado
-gamingApp/src/api/middlewares/faultInjectionMiddleware.ts  x-fail-at y x-pause-after-reserve-ms
+gamingApp/src/api/middlewares/faultInjectionMiddleware.ts  x-fail-db y x-pause-after-reserve-ms
 infra/mongo/init.js   colección `matches`
 infra/redis/README.md claves y saga
 scripts/demo-problem-2.sh

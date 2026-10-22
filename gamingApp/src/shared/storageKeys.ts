@@ -19,15 +19,15 @@ export const redisKeys = {
   formation: (matchId: string): string => `mm:formation:${matchId}`,
   formationIndex: "mm:formations",
   leaderboardGlobal: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:global`,
-  /** Region-scoped boards are `{prefix}{region}`; the publish script builds the old region's key. */
+  /** Los tableros regionales son `{prefijo}{región}`; el script de publicación arma la clave de la región vieja. */
   leaderboardRegionPrefix: (seasonId: string, mode: string): string =>
     `lb:${seasonId}:${mode}:region:`,
   leaderboardRegional: (seasonId: string, mode: string, region: string): string =>
     `lb:${seasonId}:${mode}:region:${region}`,
   leaderboardMembers: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:members`,
-  /** Problem 8: `{holdId}|{playerId}` for every player a sanction reversal holds in this board. */
+  /** Problema 8: `{holdId}|{playerId}` por cada jugador que una reversión de sanción retiene en este tablero. */
   leaderboardHolds: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:holds`,
-  /** Problem 8: playerId -> number of reversals holding it; a held player is not published. */
+  /** Problema 8: playerId -> cantidad de reversiones que lo retienen; un jugador retenido no se publica. */
   leaderboardHeld: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:held`,
   match: (matchId: string): string => `match:${matchId}`,
   matchClosure: (matchId: string): string => `match:${matchId}:closure`,

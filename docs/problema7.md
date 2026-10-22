@@ -96,7 +96,7 @@ P7 es una consulta: no escribe en dos motores a la vez ni necesita compensación
 | Mongo caído             | `503 STORAGE_ERROR engine=mongo`.                                                                             |
 | Proyección interrumpida | Lo ya cargado es válido; reanudar con `nextCursor` o repetir.                                                 |
 
-Pasos para `x-fail-at`: `fraud.findOpposingPairs`, `fraud.findReportedByMany`, `fraud.findUsernames`, `fraud.upsertMatches`, `playerHistory.listClosedMatches`.
+Inyección de fallas: `x-fail-db: neo4j` en `POST /fraud/projection` hace fallar la primera carga al grafo; repetir la proyección completa el trabajo sin duplicar. Las detecciones son solo lecturas: para que fallen hay que detener la base (`docker compose stop neo4j`).
 
 ## Preguntas contrafactuales
 

@@ -18,7 +18,7 @@ const countrySchema = z
   .regex(/^[A-Z]{2}$/);
 const avatarUrlSchema = z.string().trim().url().max(2_048);
 
-// YYYY-MM-DD and a real calendar date (no February 30th).
+// YYYY-MM-DD y una fecha real del calendario (no existe el 30 de febrero).
 const birthDateSchema = z.iso.date().transform((value) => new Date(`${value}T00:00:00.000Z`));
 
 export const registerPlayerSchema = z

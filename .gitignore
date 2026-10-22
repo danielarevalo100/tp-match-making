@@ -1,20 +1,20 @@
-# Local configuration and secrets
+# Configuración local y secretos
 .env
 .env.*
 !.env.example
 
-# IDE and operating-system files
+# Archivos del IDE y del sistema operativo
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
 
-# Logs and temporary files
+# Logs y archivos temporales
 *.log
 tmp/
 temp/
 
-# Application build and dependency outputs
+# Salida del build y dependencias de la aplicación
 node_modules/
 dist/
 build/

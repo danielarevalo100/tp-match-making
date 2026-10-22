@@ -15,7 +15,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     return;
   }
 
-  // Business errors (see the *Errors.ts file of each module).
+  // Errores de negocio (ver el archivo *Errors.ts de cada módulo).
   if (error instanceof AppError) {
     response
       .status(error.status)
@@ -24,13 +24,13 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   }
 
   if (error instanceof InjectedFailureError) {
-    response.status(500).json({ error: "INJECTED_FAILURE", step: error.step });
+    response.status(500).json({ error: "INJECTED_FAILURE", engine: error.engine });
     return;
   }
 
   if (error instanceof StorageError) {
     console.error(error, error.cause);
-    response.status(503).json({ error: "STORAGE_ERROR", engine: error.engine, step: error.step });
+    response.status(503).json({ error: "STORAGE_ERROR", engine: error.engine });
     return;
   }
 

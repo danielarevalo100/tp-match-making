@@ -22,7 +22,7 @@ export class CassandraMatchClosureAdapter
   implements MatchClosureLogPort
 {
   appendFinished(event: MatchFinishedEvent): Promise<void> {
-    return this.run("matchClosure.appendFinished", async () => {
+    return this.write(async () => {
       await this.client.execute(insertFinished, [
         event.matchId,
         new Date(event.tsMs),
@@ -41,7 +41,7 @@ export class CassandraMatchClosureAdapter
   }
 
   listScoringEvents(matchId: string, limit: number, pageState?: string): Promise<ScoringEventPage> {
-    return this.run("matchClosure.listEvents", async () => {
+    return this.read(async () => {
       const result = await this.client.execute(listEvents, [matchId], {
         fetchSize: limit,
         ...(pageState ? { pageState } : {}),

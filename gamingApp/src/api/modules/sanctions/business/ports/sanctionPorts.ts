@@ -11,17 +11,17 @@ import type {
   SeasonStanding,
 } from "../models/sanction.js";
 
-/** Sanctions and the reversal journal (MongoDB `sanctions`), plus the reads that validate them. */
+/** Sanciones y journal de la reversión (`sanctions` en MongoDB), más las lecturas que las validan. */
 export interface SanctionRepositoryPort {
   find(sanctionId: string): Promise<SanctionRecord | null>;
-  /** False when a sanction with the same id already exists (the request is a retry). */
+  /** False si ya existe una sanción con el mismo id (el pedido es un reintento). */
   insert(sanction: SanctionRecord): Promise<boolean>;
   playerExists(playerId: string): Promise<boolean>;
   findAdministrator(administratorId: string): Promise<AdministratorInfo | null>;
   findReport(reportId: string): Promise<ReportInfo | null>;
-  /** `pending | failed | reverting -> reverting`, counting the attempt. */
+  /** `pending | failed | reverting -> reverting`, contando el intento. */
   beginReversal(sanctionId: string, at: Date): Promise<void>;
-  /** Records a finished step; `hold` also records the boards it held. */
+  /** Anota un paso terminado; `hold` también anota los tableros que retuvo. */
   markStep(
     sanctionId: string,
     step: ReversalStep,
@@ -30,20 +30,20 @@ export interface SanctionRepositoryPort {
   ): Promise<void>;
   markMatchReverted(sanctionId: string, matchId: string, at: Date): Promise<void>;
   completeReversal(sanctionId: string, at: Date): Promise<void>;
-  /** Only `reverting -> failed`: never degrades a reversal another attempt completed. */
+  /** Solo `reverting -> failed`: nunca degrada una reversión que otro intento completó. */
   failReversal(sanctionId: string, message: string, at: Date): Promise<void>;
 }
 
-/** Matches, ratings and season standings (MongoDB `matches` and `players`). */
+/** Partidas, ratings y standings de temporada (`matches` y `players` en MongoDB). */
 export interface ResultReversalPort {
   findMatches(matchIds: readonly string[]): Promise<ReversibleMatch[]>;
-  /** Ranked modes and the seasons that already started (active or closed). */
+  /** Modos rankeados y temporadas que ya empezaron (activas o cerradas). */
   findSeasonCatalog(): Promise<SeasonCatalog>;
-  /** `closed -> voided`. Idempotent: a match already voided (by any sanction) is left as it is. */
+  /** `closed -> voided`. Idempotente: una partida ya anulada (por cualquier sanción) queda como está. */
   voidMatch(matchId: string, sanctionId: string, at: Date): Promise<void>;
   /**
-   * Subtracts the delta from the mode rating and from the affected season standings, once per
-   * (match, player), and only if problem 4 had applied it.
+   * Resta el delta del rating del modo y de los standings de temporada afectados, una vez por
+   * (partida, jugador), y solo si el problema 4 lo había aplicado.
    */
   revertRating(reversal: RatingReversal): Promise<void>;
   findStandings(
@@ -53,35 +53,35 @@ export interface ResultReversalPort {
   ): Promise<SeasonStanding[]>;
 }
 
-/** Matchmaking queue (Redis): the same operation problem 1 uses to leave the queue. */
+/** Cola de matchmaking (Redis): la misma operación que usa el problema 1 para salir de la cola. */
 export interface SanctionQueuePort {
-  /** True when the player was queued (or being placed in a match) and was removed. */
+  /** True si el jugador estaba en la cola (o siendo ubicado en una partida) y se lo sacó. */
   leave(playerId: string): Promise<boolean>;
 }
 
-/** Player history (Cassandra `match_history_by_player`, problem 6). */
+/** Historial de jugadores (Cassandra `match_history_by_player`, problema 6). */
 export interface HistoryCleanupPort {
-  /** Deletes the match's row of each player. Idempotent. */
+  /** Borra la fila de la partida de cada jugador. Idempotente. */
   deleteMatch(matchId: string, endedAt: Date, playerIds: readonly string[]): Promise<void>;
 }
 
-/** Co-participation graph (Neo4j, problem 7). */
+/** Grafo de coparticipación (Neo4j, problema 7). */
 export interface GraphCleanupPort {
-  /** Deletes the match node and its PLAYED relationships. Idempotent. */
+  /** Borra el nodo de la partida y sus relaciones PLAYED. Idempotente. */
   deleteMatch(matchId: string): Promise<void>;
 }
 
-/** Season leaderboards (Redis sorted sets, problem 5). */
+/** Leaderboards de temporada (sorted sets de Redis, problema 5). */
 export interface ReversalLeaderboardPort {
-  /** Publications of these players are skipped until they are released. Idempotent. */
+  /** Las publicaciones de estos jugadores se saltean hasta liberarlos. Idempotente. */
   hold(seasonId: string, mode: string, holdId: string, playerIds: readonly string[]): Promise<void>;
-  /** Releases the hold and writes the current standings, atomically for the whole board. */
+  /** Quita la retención y escribe los standings actuales, de forma atómica para todo el tablero. */
   release(
     seasonId: string,
     mode: string,
     holdId: string,
     entries: readonly HeldStanding[],
   ): Promise<void>;
-  /** Problem 5's revision-guarded publication; held players are skipped. */
+  /** La publicación del problema 5, que respeta la revisión; saltea a los jugadores retenidos. */
   publish(seasonId: string, mode: string, standings: readonly SeasonStanding[]): Promise<void>;
 }

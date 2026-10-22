@@ -8,18 +8,18 @@ import type {
   SeasonInfo,
 } from "../models/leaderboard.js";
 
-/** Ordered ranking (Redis sorted sets): the only place that knows positions. */
+/** Ranking ordenado (sorted sets de Redis): el único lugar que conoce las posiciones. */
 export interface LeaderboardRankingPort {
   top(board: LeaderboardBoard, limit: number): Promise<RankingSlice>;
-  /** Null when the player is not in that board. */
+  /** Null cuando el jugador no está en ese tablero. */
   around(board: LeaderboardBoard, playerId: string, radius: number): Promise<RankingWindow | null>;
-  /** Writes the global and regional boards; a standing with an older revision is ignored. */
+  /** Escribe los tableros global y regional; un standing con revisión más vieja se ignora. */
   publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void>;
   listMembers(seasonId: string, mode: string): Promise<string[]>;
   remove(seasonId: string, mode: string, playerIds: readonly string[]): Promise<number>;
 }
 
-/** Catalogs, profiles and the durable standings (MongoDB). */
+/** Catálogos, perfiles y los standings durables (MongoDB). */
 export interface LeaderboardDirectoryPort {
   findSeason(seasonId: string): Promise<SeasonInfo | null>;
   findMode(mode: string): Promise<GameModeInfo | null>;
@@ -34,7 +34,7 @@ export interface LeaderboardDirectoryPort {
     seasonId: string,
     mode: string,
   ): Promise<LeaderboardStanding[]>;
-  /** Every standing of the season and mode, in batches. */
+  /** Todos los standings de la temporada y modo, en lotes. */
   listStandings(
     seasonId: string,
     mode: string,

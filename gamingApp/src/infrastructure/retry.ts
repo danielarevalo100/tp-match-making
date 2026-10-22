@@ -1,6 +1,7 @@
 /**
- * Runs `connect` until it succeeds, waiting `delayMs` between attempts. The databases may still
- * be starting when the app starts (docker compose), so the first attempts are expected to fail.
+ * Ejecuta `connect` hasta que funcione, esperando `delayMs` entre intentos. Las bases pueden
+ * estar arrancando cuando arranca la app (docker compose), así que es normal que fallen los
+ * primeros intentos.
  */
 export async function retry<T>(
   attempts: number,

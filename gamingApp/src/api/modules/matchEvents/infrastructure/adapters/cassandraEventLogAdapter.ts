@@ -13,10 +13,10 @@ const insertEvent = `INSERT INTO ${table}
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
 export class CassandraEventLogAdapter extends BaseCassandraAdapter implements MatchEventLogPort {
-  // The primary key is (match_id, ts, event_id): a retry writes the very same row. Absent columns
-  // are sent as `unset` instead of null so no tombstone is created.
+  // La clave primaria es (match_id, ts, event_id): un reintento escribe exactamente la misma fila.
+  // Las columnas ausentes se mandan como `unset` en lugar de null para no crear tombstones.
   append(event: MatchEvent): Promise<void> {
-    return this.run("matchEvents.appendEvent", async () => {
+    return this.write(async () => {
       await this.client.execute(insertEvent, [
         event.matchId,
         new Date(event.tsMs),
@@ -31,7 +31,7 @@ export class CassandraEventLogAdapter extends BaseCassandraAdapter implements Ma
   }
 
   list(matchId: string, query: EventQuery): Promise<EventPage> {
-    return this.run("matchEvents.listEvents", async () => {
+    return this.read(async () => {
       const conditions = ["match_id = ?"];
       const params: unknown[] = [matchId];
       if (query.fromTsMs !== undefined) {

@@ -25,10 +25,10 @@ export class MongoReportsAdapter extends BaseMongoAdapter implements ReportsPort
     this.reports = database.collection<ReportDocument>(mongoCollections.reports);
   }
 
-  // Automatic reports (reporterPlayerId null) are not "reporters"; the count of distinct
-  // reporters is decided in MongoDB so only players that can be flagged are transferred.
+  // Los reportes automáticos (reporterPlayerId null) no tienen autor; la cantidad de autores
+  // distintos se calcula en MongoDB, así solo viajan los jugadores que pueden quedar marcados.
   findReportedByMany(since: Date, minReporters: number): Promise<ReportedPlayerReports[]> {
-    return this.run("fraud.findReportedByMany", async () => {
+    return this.read(async () => {
       const groups = await this.reports
         .aggregate<GroupedReports>([
           { $match: { createdAt: { $gte: since }, reporterPlayerId: { $ne: null } } },

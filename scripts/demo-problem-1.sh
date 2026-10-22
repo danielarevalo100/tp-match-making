@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Problem 1 demo: joining a matchmaking queue.
+# Demo del problema 1: entrar a una cola de matchmaking.
 #
-# Needs the Compose stack running (mongodb, redis and gaming-app). Registers a throwaway player and walks through every
-# rule: success, idempotent retry, second queue, active match, sanction in
-# force and a concurrent burst. Cleans up after itself.
+# Necesita el stack de Compose corriendo (mongodb, redis y gaming-app). Registra un jugador
+# descartable y recorre todas las reglas: éxito, reintento idempotente, segunda cola, partida
+# activa, sanción en vigor y una ráfaga concurrente. Limpia lo que crea al terminar.
 #
 #   ./scripts/demo-problem-1.sh
 #
-# Overrides: PLAYERS_URL, MATCHMAKING_URL, MODE, MONGO_ROOT_USERNAME, MONGO_ROOT_PASSWORD
+# Se puede cambiar: PLAYERS_URL, MATCHMAKING_URL, MODE, MONGO_ROOT_USERNAME, MONGO_ROOT_PASSWORD
 
 set -euo pipefail
 
@@ -29,7 +29,7 @@ mongo_eval() {
 }
 
 FAILURES=0
-# call METHOD URL [JSON] -> sets STATUS, prints the response body
+# call MÉTODO URL [JSON] -> deja STATUS, imprime el cuerpo de la respuesta
 call() {
   local method="$1" url="$2" data="${3:-}"
   if [ -n "$data" ]; then

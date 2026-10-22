@@ -8,8 +8,7 @@ import type {
   QueueTicket,
 } from "../../../src/api/modules/matchmaking/business/models/queueTicket.js";
 import type { MatchmakingQueuePort } from "../../../src/api/modules/matchmaking/business/ports/matchmakingPorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
 type Formation = {
   abandoned: Set<string>;
@@ -23,10 +22,6 @@ export class InMemoryMatchmakingQueue implements MatchmakingQueuePort {
   readonly activeMatches = new Map<string, string>();
   readonly formations = new Map<string, Formation>();
   readonly liveMatches = new Map<string, readonly string[]>();
-
-  private failIfRequested(step: string): void {
-    if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-  }
 
   async enqueue(ticket: QueueTicket): Promise<EnqueueOutcome> {
     const existing = this.tickets.get(ticket.playerId);
@@ -86,7 +81,7 @@ export class InMemoryMatchmakingQueue implements MatchmakingQueuePort {
     matchId: string,
     tickets: readonly QueueTicket[],
   ): Promise<ReserveOutcome> {
-    this.failIfRequested("matchmaking.reserve");
+    failIfRequested("redis");
     const missing = tickets.filter(
       (ticket) => this.tickets.get(ticket.playerId)?.ticketId !== ticket.ticketId,
     );
@@ -111,7 +106,7 @@ export class InMemoryMatchmakingQueue implements MatchmakingQueuePort {
     _region: string,
     playerIds: readonly string[],
   ): Promise<CommitOutcome> {
-    this.failIfRequested("matchmaking.commit");
+    failIfRequested("redis");
     const formation = this.formations.get(matchId);
     if (formation?.status === "committed") return { status: "committed" };
     if (!formation || formation.status !== "reserved") throw new Error("Invalid formation.");
@@ -122,7 +117,7 @@ export class InMemoryMatchmakingQueue implements MatchmakingQueuePort {
   }
 
   async restoreFormation(matchId: string): Promise<RestoreOutcome> {
-    this.failIfRequested("matchmaking.restore");
+    failIfRequested("redis");
     const formation = this.formations.get(matchId);
     if (!formation) return { restored: [], status: "not_found" };
     if (formation.status === "rolled_back") return { restored: [], status: "already_rolled_back" };

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defaultProfileMatches, maxProfileMatches } from "../../business/models/playerProfile.js";
 import { sanctionTypes } from "../../business/models/sanction.js";
 
-// Bounds the work of one reversal: every match holds and republishes its players atomically.
+// Acota el trabajo de una reversión: cada partida retiene y republica a sus jugadores de forma atómica.
 const maxMatchesPerSanction = 100;
 
 const isoDate = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
@@ -14,7 +14,7 @@ export const createSanctionSchema = z
   .object({
     administratorId: z.string().uuid(),
     description: z.string().trim().min(1).max(2_000).optional(),
-    /** null or absent: permanent. */
+    /** null o ausente: permanente. */
     endsAt: isoDate.nullable().optional(),
     matchIds: z
       .array(z.string().uuid())

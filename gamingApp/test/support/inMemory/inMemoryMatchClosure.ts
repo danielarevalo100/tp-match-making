@@ -16,30 +16,24 @@ import type {
   MatchClosureLogPort,
   MatchClosureRepositoryPort,
 } from "../../../src/api/modules/matchClosure/business/ports/matchClosurePorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
-
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
 export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPort {
   readonly matches = new Map<string, MatchClosureRecord>();
   readonly ratings = new Map<string, number>();
   readonly ratingApplications = new Set<string>();
   readonly finalScores = new Map<string, readonly PlayerFinalScore[]>();
-  /** Season standings by `${seasonId}|${mode}|${playerId}`. */
+  /** Standings de temporada por `${seasonId}|${mode}|${playerId}`. */
   readonly standings = new Map<string, LeaderboardStanding>();
   readonly regions = new Map<string, string>();
   leaderboardSeason: string | null = "2026-S2";
 
   async find(matchId: string): Promise<MatchClosureRecord | null> {
-    failIfRequested("matchClosure.findMatch");
     return this.matches.get(matchId) ?? null;
   }
 
   async prepare(input: FinishMatchInput): Promise<MatchClosureRecord | null> {
-    failIfRequested("matchClosure.prepareMongo");
+    failIfRequested("mongo");
     const match = this.matches.get(input.matchId);
     if (!match || match.status !== "in_progress") return null;
     const prepared: MatchClosureRecord = {
@@ -55,7 +49,7 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
   }
 
   async rollbackPreparation(matchId: string, closureId: string): Promise<void> {
-    failIfRequested("matchClosure.rollbackMongo");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (match?.status !== "closing" || match.closureId !== closureId) return;
     this.matches.set(matchId, {
@@ -69,14 +63,14 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
   }
 
   async markClosedPending(matchId: string, closureId: string): Promise<void> {
-    failIfRequested("matchClosure.markClosed");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (!match || match.closureId !== closureId) return;
     this.matches.set(matchId, { ...match, scoringStatus: "pending", status: "closed" });
   }
 
   async beginScoring(matchId: string, closureId: string, _at: Date): Promise<ScoringStatus> {
-    failIfRequested("matchClosure.beginScoring");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (!match || match.closureId !== closureId) return "failed";
     if (match.scoringStatus === "applied") return "applied";
@@ -89,7 +83,7 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
     closureId: string,
     scores: readonly PlayerFinalScore[],
   ): Promise<void> {
-    failIfRequested("matchClosure.completeScoring");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (!match || match.closureId !== closureId) return;
     this.finalScores.set(
@@ -97,7 +91,6 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
       scores.map((score) => ({ ...score })),
     );
     this.matches.set(matchId, { ...match, scoringStatus: "applied" });
-    failIfRequested("matchClosure.completeScoringAfterWrite");
   }
 
   async failScoring(
@@ -112,12 +105,11 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
   }
 
   async findLeaderboardSeason(_mode: string, _playedAt: Date): Promise<string | null> {
-    failIfRequested("matchClosure.findLeaderboardSeason");
     return this.leaderboardSeason;
   }
 
   async applyRating(input: ApplyRatingInput): Promise<void> {
-    failIfRequested("matchClosure.applyRating");
+    failIfRequested("mongo");
     const key = `${input.matchId}|${input.playerId}`;
     if (this.ratingApplications.has(key)) return;
     this.ratingApplications.add(key);
@@ -138,7 +130,6 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
     mode: string,
     seasonId: string,
   ): Promise<LeaderboardStanding[]> {
-    failIfRequested("matchClosure.findStandings");
     return playerIds.flatMap((playerId) => {
       const standing = this.standings.get(`${seasonId}|${mode}|${playerId}`);
       return standing ? [{ ...standing }] : [];
@@ -150,7 +141,7 @@ export class InMemoryMatchClosureRepository implements MatchClosureRepositoryPor
     closureId: string,
     status: "published" | "not_ranked",
   ): Promise<void> {
-    failIfRequested("matchClosure.markLeaderboard");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (!match || match.closureId !== closureId || match.scoringStatus !== "applied") return;
     this.matches.set(matchId, { ...match, leaderboardStatus: status });
@@ -166,7 +157,7 @@ export class InMemoryLiveMatchClosure implements LiveMatchClosurePort {
   readonly released = new Map<string, string>();
 
   async beginClosing(matchId: string, closureId: string): Promise<RedisClosingOutcome> {
-    failIfRequested("matchClosure.beginClosing");
+    failIfRequested("redis");
     if (this.released.get(matchId) === closureId) return "released";
     const match = this.live.get(matchId);
     if (!match) throw new Error("not live");
@@ -177,7 +168,7 @@ export class InMemoryLiveMatchClosure implements LiveMatchClosurePort {
   }
 
   async rollbackClosing(matchId: string, closureId: string): Promise<void> {
-    failIfRequested("matchClosure.rollbackClosing");
+    failIfRequested("redis");
     const match = this.live.get(matchId);
     if (match?.status === "closing" && match.closureId === closureId) {
       this.live.set(matchId, { ...match, closureId: null, status: "in_progress" });
@@ -189,7 +180,7 @@ export class InMemoryLiveMatchClosure implements LiveMatchClosurePort {
     closureId: string,
     playerIds: readonly string[],
   ): Promise<RedisReleaseOutcome> {
-    failIfRequested("matchClosure.releasePlayers");
+    failIfRequested("redis");
     if (this.released.get(matchId) === closureId) return "already_released";
     const match = this.live.get(matchId);
     if (!match || match.status !== "closing" || match.closureId !== closureId) {
@@ -213,7 +204,7 @@ export class InMemoryMatchClosureLog implements MatchClosureLogPort {
   readonly events: ScoringEvent[] = [];
 
   async appendFinished(event: MatchFinishedEvent): Promise<void> {
-    failIfRequested("matchClosure.appendFinished");
+    failIfRequested("cassandra");
     this.finished.set(`${event.matchId}|${String(event.tsMs)}|${event.eventId}`, event);
   }
 
@@ -222,7 +213,6 @@ export class InMemoryMatchClosureLog implements MatchClosureLogPort {
     limit: number,
     pageState?: string,
   ): Promise<ScoringEventPage> {
-    failIfRequested("matchClosure.listEvents");
     const start = pageState ? Number(pageState) : 0;
     const events = this.events.slice(start, start + limit);
     const next = start + events.length;

@@ -15,12 +15,12 @@ import type {
 } from "../ports/playerProfilePorts.js";
 
 /**
- * Problem 8, traceability query: everything about one player in a single request. Each engine is
- * read where the data lives, with the shared playerId, and nothing is copied for the occasion:
+ * Problema 8, consulta de trazabilidad: todo sobre un jugador en un solo pedido. Cada base se lee
+ * donde viven los datos, con el playerId compartido, y no se copia nada para la ocasión:
  *
- *   MongoDB    profile, rating per mode, season standings and sanctions
- *   Redis      position in the global and regional board of each ranked mode (problem 5)
- *   Cassandra  latest matches from the player history (problem 6)
+ *   MongoDB    perfil, rating por modo, standings de temporada y sanciones
+ *   Redis      posición en el tablero global y regional de cada modo rankeado (problema 5)
+ *   Cassandra  últimas partidas del historial (problema 6)
  */
 export class PlayerProfileService {
   constructor(

@@ -14,7 +14,7 @@ import {
 
 const releaseMarkerTtlSeconds = 86_400;
 
-/** Replies shared by both scripts when the match cannot be closed: `NOT_LIVE` or `CONFLICT|...`. */
+/** Respuestas de los dos scripts cuando la partida no se puede cerrar: `NOT_LIVE` o `CONFLICT|...`. */
 function throwFailedReply(matchId: string, reply: string): never {
   if (reply === "NOT_LIVE") throw new MatchClosureConflictError(matchId, "not_live");
   if (reply.startsWith("CONFLICT|")) {
@@ -25,7 +25,7 @@ function throwFailedReply(matchId: string, reply: string): never {
 
 export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMatchClosurePort {
   async beginClosing(matchId: string, closureId: string): Promise<RedisClosingOutcome> {
-    const reply = await this.run("matchClosure.beginClosing", async () =>
+    const reply = await this.write(async () =>
       String(
         await this.redis.eval(
           beginClosingScript,
@@ -43,7 +43,7 @@ export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMa
   }
 
   rollbackClosing(matchId: string, closureId: string): Promise<void> {
-    return this.run("matchClosure.rollbackClosing", async () => {
+    return this.write(async () => {
       await this.redis.eval(rollbackClosingScript, 1, redisKeys.match(matchId), closureId);
     });
   }
@@ -53,7 +53,7 @@ export class RedisMatchClosureAdapter extends BaseRedisAdapter implements LiveMa
     closureId: string,
     playerIds: readonly string[],
   ): Promise<RedisReleaseOutcome> {
-    const reply = await this.run("matchClosure.releasePlayers", async () =>
+    const reply = await this.write(async () =>
       String(
         await this.redis.eval(
           releaseMatchScript,

@@ -11,24 +11,18 @@ import type {
   MatchEventLogPort,
 } from "../../../src/api/modules/matchEvents/business/ports/matchEventPorts.js";
 import { toScoreboard } from "../../../src/api/modules/matchEvents/infrastructure/mappers/scoreboardMapper.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
-
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
 export class InMemoryEventLog implements MatchEventLogPort {
-  // Keyed like the Cassandra primary key, so a retry overwrites instead of duplicating.
+  // Con la misma clave que la primaria de Cassandra, así un reintento pisa en lugar de duplicar.
   readonly rows = new Map<string, MatchEvent>();
 
   async append(event: MatchEvent): Promise<void> {
-    failIfRequested("matchEvents.appendEvent");
+    failIfRequested("cassandra");
     this.rows.set(`${event.matchId}|${String(event.tsMs)}|${event.eventId}`, event);
   }
 
   async list(matchId: string, query: EventQuery): Promise<EventPage> {
-    failIfRequested("matchEvents.listEvents");
     const sorted = [...this.rows.values()]
       .filter(
         (event) =>
@@ -44,7 +38,7 @@ export class InMemoryEventLog implements MatchEventLogPort {
   }
 }
 
-/** Mirrors `applyEventScript`: if the Lua script changes, change this too. */
+/** Replica `applyEventScript`: si cambia el script Lua, cambiar esto también. */
 export class InMemoryLiveScoreboard implements LiveScoreboardPort {
   readonly applied = new Map<string, Set<string>>();
   readonly boards = new Map<string, Record<string, string>>();
@@ -62,22 +56,20 @@ export class InMemoryLiveScoreboard implements LiveScoreboardPort {
   }
 
   async findLiveMatch(matchId: string): Promise<LiveMatch | null> {
-    failIfRequested("matchEvents.findLiveMatch");
     return this.liveMatches.get(matchId) ?? null;
   }
 
   async apply(event: MatchEvent): Promise<ApplyOutcome> {
-    failIfRequested("matchEvents.applyScoreboard");
+    failIfRequested("redis");
     return this.applyOne(event);
   }
 
   async applyMany(events: readonly MatchEvent[]): Promise<number> {
-    failIfRequested("matchEvents.applyScoreboard");
+    failIfRequested("redis");
     return events.filter((event) => this.applyOne(event) === "applied").length;
   }
 
   async findScoreboard(matchId: string): Promise<Scoreboard | null> {
-    failIfRequested("matchEvents.findScoreboard");
     const live = this.liveMatches.get(matchId);
     return live ? toScoreboard(live, this.boards.get(matchId) ?? {}) : null;
   }

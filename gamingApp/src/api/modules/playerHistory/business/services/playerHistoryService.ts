@@ -7,12 +7,12 @@ export const historyLimit = 50;
 const dayMs = 86_400_000;
 
 /**
- * Player history and statistics (problem 6), read-only. Reads, in this order:
- *   1. MongoDB   the player exists, and which season is active (catalog)
- *   2. Cassandra the last 50 matches, and every match since the earliest period start
- * Both Cassandra reads are slices of one partition (`player_id`), so they do not depend on how
- * many matches the platform has. The periods are rolling: week = last 7 days, month = last 30
- * days, season = from the start of the active season until now.
+ * Historial y estadísticas del jugador (problema 6), solo lectura. Lee, en este orden:
+ *   1. MongoDB   que el jugador exista, y qué temporada está activa (catálogo)
+ *   2. Cassandra las últimas 50 partidas, y todas desde el inicio del período más largo
+ * Las dos lecturas de Cassandra son porciones de una partición (`player_id`), así que no dependen
+ * de cuántas partidas tenga la plataforma. Los períodos son móviles: semana = últimos 7 días,
+ * mes = últimos 30 días, temporada = desde el inicio de la temporada activa hasta ahora.
  */
 export class PlayerHistoryService {
   constructor(

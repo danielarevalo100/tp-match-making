@@ -14,7 +14,7 @@ export abstract class BaseMongoAdapter extends BaseAdapter {
   }
 }
 
-/** A unique index (for example `_id`) rejected the write. */
+/** Un índice único (por ejemplo `_id`) rechazó la escritura. */
 export function isDuplicateKeyError(error: unknown): error is MongoServerError {
   return error instanceof MongoServerError && error.code === 11_000;
 }

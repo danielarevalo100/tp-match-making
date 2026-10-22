@@ -3,17 +3,17 @@ import { cassandraTables } from "../../../../../shared/storageKeys.js";
 import type { HistoryCleanupPort } from "../../business/ports/sanctionPorts.js";
 
 const table = cassandraTables.matchHistoryByPlayer;
-// The full primary key: each delete touches one row of one player's partition.
+// La clave primaria completa: cada delete toca una fila de la partición de un jugador.
 const deleteRow = `DELETE FROM ${table} WHERE player_id = ? AND ended_at = ? AND match_id = ?`;
 
 export class CassandraHistoryCleanupAdapter
   extends BaseCassandraAdapter
   implements HistoryCleanupPort
 {
-  // Deleting a row that is already gone is a no-op, so a retry is harmless. Problem 6 derives the
-  // statistics from these rows, so once they are gone the voided match no longer counts anywhere.
+  // Borrar una fila que ya no está no hace nada, así un reintento es inofensivo. El problema 6
+  // calcula las estadísticas con estas filas, así que sin ellas la partida anulada ya no cuenta.
   deleteMatch(matchId: string, endedAt: Date, playerIds: readonly string[]): Promise<void> {
-    return this.run("sanctions.deleteHistory", async () => {
+    return this.write(async () => {
       await Promise.all(
         playerIds.map((playerId) => this.client.execute(deleteRow, [playerId, endedAt, matchId])),
       );

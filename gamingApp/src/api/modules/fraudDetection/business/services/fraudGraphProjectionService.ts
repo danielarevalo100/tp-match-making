@@ -7,8 +7,9 @@ import type { FraudMatchSourcePort, MatchGraphPort } from "../ports/fraudPorts.j
 const pageSize = 500;
 
 /**
- * Loads closed matches into the co-participation graph (Neo4j). Same contract as the history
- * projection: idempotent (nodes and relationships are merged by id) and resumable with `nextCursor`.
+ * Carga las partidas cerradas en el grafo de coparticipación (Neo4j). Mismo contrato que la
+ * proyección del historial: idempotente (nodos y relaciones se unen por id) y reanudable con
+ * `nextCursor`.
  */
 export class FraudGraphProjectionService {
   constructor(

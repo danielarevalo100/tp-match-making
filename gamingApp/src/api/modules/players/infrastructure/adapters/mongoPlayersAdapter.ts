@@ -25,7 +25,7 @@ export class MongoPlayersAdapter extends BaseMongoAdapter implements PlayersRepo
   }
 
   create(player: Player): Promise<void> {
-    return this.run("players.create", async () => {
+    return this.write(async () => {
       try {
         await this.collection.insertOne(toPlayerDocument(player));
       } catch (error: unknown) {
@@ -35,28 +35,28 @@ export class MongoPlayersAdapter extends BaseMongoAdapter implements PlayersRepo
   }
 
   findByEmail(email: string): Promise<Player | null> {
-    return this.run("players.findByEmail", async () => {
+    return this.read(async () => {
       const document = await this.collection.findOne({ email });
       return document ? toPlayer(document) : null;
     });
   }
 
   findById(id: string): Promise<Player | null> {
-    return this.run("players.findById", async () => {
+    return this.read(async () => {
       const document = await this.collection.findOne({ _id: id });
       return document ? toPlayer(document) : null;
     });
   }
 
   findByUsername(username: string): Promise<Player | null> {
-    return this.run("players.findByUsername", async () => {
+    return this.read(async () => {
       const document = await this.collection.findOne({ username });
       return document ? toPlayer(document) : null;
     });
   }
 
   list(cursor: string | null, limit: number): Promise<PlayerPage> {
-    return this.run("players.list", async () => {
+    return this.read(async () => {
       const filter: Filter<PlayerDocument> = cursor ? { _id: { $gt: cursor } } : {};
       const documents = await this.collection
         .find(filter)
@@ -80,7 +80,7 @@ export class MongoPlayersAdapter extends BaseMongoAdapter implements PlayersRepo
     changes: PlayerProfileChanges,
     updatedAt: Date,
   ): Promise<Player | null> {
-    return this.run("players.updateProfile", async () => {
+    return this.write(async () => {
       const setFields: Partial<PlayerDocument> = { updatedAt };
       const unsetFields: Partial<Record<keyof PlayerDocument, "">> = {};
 
@@ -110,7 +110,7 @@ export class MongoPlayersAdapter extends BaseMongoAdapter implements PlayersRepo
   }
 
   updateStatus(id: string, status: AccountStatus, updatedAt: Date): Promise<Player | null> {
-    return this.run("players.updateStatus", async () => {
+    return this.write(async () => {
       const document = await this.collection.findOneAndUpdate(
         { _id: id },
         { $set: { accountStatus: status, updatedAt } },

@@ -17,7 +17,7 @@ import {
 } from "../../../../src/api/modules/matchEvents/business/services/matchEventService.js";
 import { MatchEventController } from "../../../../src/api/modules/matchEvents/presentation/controllers/matchEventController.js";
 import { createMatchEventRouter } from "../../../../src/api/modules/matchEvents/presentation/routers/matchEventRouter.js";
-import { InjectedFailureError } from "../../../../src/shared/errors.js";
+import { InjectedFailureError, type StorageEngine } from "../../../../src/shared/errors.js";
 import { requestContext } from "../../../../src/shared/requestContext.js";
 import {
   InMemoryEventLog,
@@ -70,8 +70,8 @@ function other(
   };
 }
 
-const withFailure = <T>(step: string, run: () => Promise<T>): Promise<T> =>
-  requestContext.run({ failAt: step }, run);
+const withFailedDb = <T>(engine: StorageEngine, run: () => Promise<T>): Promise<T> =>
+  requestContext.run({ failDb: engine }, run);
 
 describe("MatchEventService", () => {
   let context = build();
@@ -149,7 +149,7 @@ describe("MatchEventService", () => {
 
   it("a failure writing the log leaves nothing behind in either engine", async () => {
     await assert.rejects(
-      withFailure("matchEvents.appendEvent", () => context.service.record(kill())),
+      withFailedDb("cassandra", () => context.service.record(kill())),
       InjectedFailureError,
     );
 
@@ -160,7 +160,7 @@ describe("MatchEventService", () => {
   it("a failure updating the scoreboard leaves the event in the log; retrying heals it", async () => {
     const event = kill();
     await assert.rejects(
-      withFailure("matchEvents.applyScoreboard", () => context.service.record(event)),
+      withFailedDb("redis", () => context.service.record(event)),
       InjectedFailureError,
     );
 
@@ -177,7 +177,7 @@ describe("MatchEventService", () => {
     const second = kill({ tsMs: 1_700_000_000_002 });
     await context.service.record(first);
     await assert.rejects(
-      withFailure("matchEvents.applyScoreboard", () => context.service.record(second)),
+      withFailedDb("redis", () => context.service.record(second)),
       InjectedFailureError,
     );
 
@@ -312,14 +312,11 @@ describe("match events API", () => {
     assert.equal(board.status, 404);
   });
 
-  it("injects a failure at the requested step", async () => {
-    const response = await post(valid()).set("x-fail-at", "matchEvents.applyScoreboard");
+  it("injects a failure in the requested database", async () => {
+    const response = await post(valid()).set("x-fail-db", "redis");
 
     assert.equal(response.status, 500);
-    assert.deepEqual(response.body, {
-      error: "INJECTED_FAILURE",
-      step: "matchEvents.applyScoreboard",
-    });
+    assert.deepEqual(response.body, { error: "INJECTED_FAILURE", engine: "redis" });
     assert.equal(context.log.rows.size, 1);
   });
 });

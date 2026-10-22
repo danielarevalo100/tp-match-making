@@ -14,8 +14,12 @@ class TestAdapter extends BaseAdapter {
     return error instanceof DriverError;
   }
 
-  execute<T>(step: string, operation: () => Promise<T>): Promise<T> {
-    return this.run(step, operation);
+  readOperation<T>(operation: () => Promise<T>): Promise<T> {
+    return this.read(operation);
+  }
+
+  writeOperation<T>(operation: () => Promise<T>): Promise<T> {
+    return this.write(operation);
   }
 }
 
@@ -23,28 +27,27 @@ describe("BaseAdapter", () => {
   const adapter = new TestAdapter();
 
   it("returns the operation result", async () => {
-    assert.equal(await adapter.execute("test.ok", async () => 42), 42);
+    assert.equal(await adapter.readOperation(async () => 42), 42);
+    assert.equal(await adapter.writeOperation(async () => 43), 43);
   });
 
-  it("fails before running the operation when the step matches failAt", async () => {
-    let executed = false;
-    const execution = requestContext.run({ failAt: "test.step" }, () =>
-      adapter.execute("test.step", async () => {
-        executed = true;
-      }),
-    );
-
-    await assert.rejects(execution, (error: unknown) => {
-      assert.ok(error instanceof InjectedFailureError);
-      assert.equal(error.step, "test.step");
-      return true;
+  it("fails only the first write to the requested database, before running it", async () => {
+    const executed: string[] = [];
+    await requestContext.run({ failDb: "redis" }, async () => {
+      await adapter.readOperation(async () => executed.push("read"));
+      await assert.rejects(
+        adapter.writeOperation(async () => executed.push("first write")),
+        (error: unknown) => error instanceof InjectedFailureError && error.engine === "redis",
+      );
+      await adapter.writeOperation(async () => executed.push("second write"));
     });
-    assert.equal(executed, false);
+
+    assert.deepEqual(executed, ["read", "second write"]);
   });
 
-  it("runs other steps when failAt targets a different step", async () => {
-    const result = await requestContext.run({ failAt: "test.other" }, () =>
-      adapter.execute("test.step", async () => "done"),
+  it("does not fail writes to other databases", async () => {
+    const result = await requestContext.run({ failDb: "mongo" }, () =>
+      adapter.writeOperation(async () => "done"),
     );
 
     assert.equal(result, "done");
@@ -54,13 +57,12 @@ describe("BaseAdapter", () => {
     const cause = new DriverError("connection lost");
 
     await assert.rejects(
-      adapter.execute("test.driver", async () => {
+      adapter.readOperation(async () => {
         throw cause;
       }),
       (error: unknown) => {
         assert.ok(error instanceof StorageError);
         assert.equal(error.engine, "redis");
-        assert.equal(error.step, "test.driver");
         assert.equal(error.cause, cause);
         return true;
       },
@@ -71,7 +73,7 @@ describe("BaseAdapter", () => {
     const domainError = new Error("domain rule");
 
     await assert.rejects(
-      adapter.execute("test.domain", async () => {
+      adapter.writeOperation(async () => {
         throw domainError;
       }),
       (error: unknown) => error === domainError,

@@ -278,26 +278,15 @@ Cuerpo de `POST /sanctions`:
 
 ## Inyección de fallas
 
-Pasos para `x-fail-at`, en el orden en que se ejecutan:
+Header `x-fail-db: <base>` en `POST /sanctions`: falla la primera escritura en esa base.
 
-```text
-sanctions.findSanction  sanctions.findPlayer  sanctions.findAdministrator  sanctions.findReport
-sanctions.findMatches   sanctions.insertSanction
-matchmaking.leave       sanctions.markStep
-sanctions.findSeasonCatalog  leaderboard.hold
-sanctions.voidMatch  sanctions.revertRating  sanctions.deleteHistory  sanctions.deleteGraph
-sanctions.markMatchReverted
-sanctions.findStandings  leaderboard.release  leaderboard.publish (puesta al día)
-sanctions.completeReversal  sanctions.beginReversal  sanctions.failReversal
-profile.findPlayer  profile.findActiveSeason  profile.findSanctions  leaderboard.around  playerHistory.findLatest
-```
+- `x-fail-db: mongo`: falla el insert de la sanción. `500` y no queda ninguna sanción.
+- `x-fail-db: redis`: falla la salida de la cola (paso 1). `202`, la sanción queda en vigor y `resume` completa la reversión.
+- `x-fail-db: cassandra`: la primera partida queda anulada en Mongo pero sus filas del historial no se borran. `202`, el leaderboard no cambia (los jugadores siguen retenidos) y `resume` rehace esa partida sin revertirla dos veces.
+- `x-fail-db: neo4j`: igual que el anterior, pero falla el borrado en el grafo.
+- Detener Cassandra (`docker compose stop cassandra`) y sancionar: la sanción queda registrada, la reversión `failed` y el leaderboard retenido. Al levantarla, `resume` completa.
 
-Ejemplos para la defensa:
-
-- `x-fail-at: sanctions.markMatchReverted` en `POST /sanctions`: la primera partida se revierte en los cuatro motores pero no se anota en el journal. La respuesta es `202`, el leaderboard no cambia y `resume` rehace esa partida sin revertirla dos veces.
-- `x-fail-at: leaderboard.release`: todo revertido salvo Redis; el tablero muestra el estado anterior completo hasta el reintento.
-- `x-fail-at: sanctions.insertSanction`: `500` y no queda ninguna sanción.
-- Detener Cassandra (`docker compose stop cassandra`) y sancionar: la sanción queda registrada, la reversión `failed` en `sanctions.deleteHistory` y el leaderboard retenido. Al levantarla, `resume` completa.
+La falla de la publicación final del leaderboard se prueba en los tests unitarios (`sanctions.test.ts`).
 
 ## Simulación
 

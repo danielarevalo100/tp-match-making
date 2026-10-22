@@ -29,7 +29,7 @@ export type ProfileStanding = {
   seasonId: string;
 };
 
-/** What MongoDB knows about the player: profile, rating per mode and season standings. */
+/** Lo que MongoDB sabe del jugador: perfil, rating por modo y standings de temporada. */
 export type ProfileDirectoryEntry = {
   player: ProfilePlayer;
   ratings: readonly ProfileRating[];
@@ -48,7 +48,7 @@ export type ProfileSanctionRecord = {
 };
 
 export type ProfileSanction = ProfileSanctionRecord & {
-  /** Same rule problem 1 applies: active, already started and not yet ended. */
+  /** La misma regla que aplica el problema 1: activa, ya empezada y todavía sin terminar. */
   inForce: boolean;
 };
 
@@ -57,7 +57,7 @@ export type BoardPosition = {
   totalPlayers: number;
 };
 
-/** Position read from Redis now; null when the player is not in that board. */
+/** Posición leída de Redis en el momento; null si el jugador no está en ese tablero. */
 export type ProfileLeaderboard = {
   gamesPlayed: number;
   global: BoardPosition | null;
@@ -69,11 +69,11 @@ export type ProfileLeaderboard = {
 };
 
 export type PlayerProfile = {
-  /** Positions in the active season's boards, one per ranked mode the player played. */
+  /** Posiciones en los tableros de la temporada activa, una por modo rankeado que jugó. */
   leaderboards: readonly ProfileLeaderboard[];
   player: ProfilePlayer;
   ratings: readonly ProfileRating[];
-  /** Newest first, from the player history (problem 6); voided matches are not there. */
+  /** La más nueva primero, del historial (problema 6); las partidas anuladas no están. */
   recentMatches: readonly HistoryEntry[];
   sanctions: readonly ProfileSanction[];
   seasonId: string | null;

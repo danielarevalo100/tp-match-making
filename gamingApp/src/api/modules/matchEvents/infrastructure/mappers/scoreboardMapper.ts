@@ -14,8 +14,8 @@ export function toLiveMatch(fields: Record<string, string>): LiveMatch | null {
 }
 
 /**
- * Builds the scoreboard from the two Redis hashes. Every player of the match is listed, also
- * those without events yet, so the consumer does not have to know who is playing.
+ * Arma el marcador con los dos hashes de Redis. Aparecen todos los jugadores de la partida,
+ * también los que todavía no tienen eventos, así quien lo consume no necesita saber quién juega.
  */
 export function toScoreboard(match: LiveMatch, board: Record<string, string>): Scoreboard {
   const number = (field: string): number => Number(board[field] ?? 0);

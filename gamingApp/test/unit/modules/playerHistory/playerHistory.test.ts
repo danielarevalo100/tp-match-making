@@ -16,7 +16,7 @@ import { PlayerHistoryService } from "../../../../src/api/modules/playerHistory/
 import { PlayerHistoryController } from "../../../../src/api/modules/playerHistory/presentation/controllers/playerHistoryController.js";
 import { createPlayerHistoryRouter } from "../../../../src/api/modules/playerHistory/presentation/routers/playerHistoryRouter.js";
 import { InjectedFailureError } from "../../../../src/shared/errors.js";
-import { requestContext } from "../../../../src/shared/requestContext.js";
+import { failOnce } from "../../../support/failOnce.js";
 import {
   InMemoryClosedMatchSource,
   InMemoryPlayerDirectory,
@@ -57,7 +57,7 @@ function build() {
   return { app, directory, projection, service, source, store };
 }
 
-/** One match per day for 60 days: every third one (i % 3 === 0) is a loss. Rating: ±25. */
+/** Una partida por día durante 60 días: una de cada tres (i % 3 === 0) es derrota. Rating: ±25. */
 function seedAliceHistory(store: InMemoryPlayerHistoryStore): HistoryRow[] {
   const rows: HistoryRow[] = [];
   let mmr = 1_000;
@@ -112,7 +112,7 @@ describe("PlayerHistoryService", () => {
 
     const { stats } = await context.service.getHistory(alice, now);
 
-    // week: i = 0..6 -> losses at 0, 3, 6
+    // semana: i = 0..6 -> derrotas en 0, 3, 6
     assert.equal(stats.week.matches, 7);
     assert.equal(stats.week.wins, 4);
     assert.equal(stats.week.losses, 3);
@@ -120,10 +120,10 @@ describe("PlayerHistoryService", () => {
     assert.equal(stats.week.deaths, 4 * 5 + 3 * 6);
     assert.equal(stats.week.killDeathRatio, 1.29);
     assert.equal(stats.week.winRate, 0.57);
-    // month: i = 0..29 -> 10 losses
+    // mes: i = 0..29 -> 10 derrotas
     assert.equal(stats.month.matches, 30);
     assert.equal(stats.month.wins, 20);
-    // season started 2026-07-01, long before the oldest match
+    // la temporada empezó el 2026-07-01, mucho antes de la partida más vieja
     assert.equal(stats.season?.seasonId, "2026-S2");
     assert.equal(stats.season?.matches, 60);
     assert.equal(stats.season?.wins, 40);
@@ -183,12 +183,8 @@ describe("PlayerHistoryService", () => {
     await assert.rejects(context.service.getHistory(randomUUID(), now), {
       name: "PlayerNotFoundError",
     });
-    await assert.rejects(
-      requestContext.run({ failAt: "playerHistory.findSince" }, () =>
-        context.service.getHistory(alice, now),
-      ),
-      InjectedFailureError,
-    );
+    failOnce(context.store, "findSince", "cassandra");
+    await assert.rejects(context.service.getHistory(alice, now), InjectedFailureError);
     assert.equal(context.store.rows.size, 0);
   });
 });
@@ -334,15 +330,33 @@ describe("history API", () => {
     assert.deepEqual(response.body as ProjectionResult, { matches: 1, nextCursor: null, rows: 2 });
   });
 
-  it("maps an injected failure to a 500 with the step", async () => {
+  it("maps an injected Cassandra failure in the projection to a 500", async () => {
+    context.source.matches.push({
+      endedAt: new Date(now.getTime() - dayMs),
+      id: "00000000-0000-4000-8000-000000000002",
+      mode: "ranked_1v1",
+      players: [
+        {
+          deaths: 0,
+          kills: 0,
+          mmrAfter: 1_000,
+          mmrBefore: 1_000,
+          objectives: 0,
+          playerId: alice,
+          ratingDelta: 0,
+          result: "draw",
+          score: 0,
+        },
+      ],
+      region: "LATAM",
+    });
     const response = await request(context.app)
-      .get(`/history/players/${alice}`)
-      .set("x-fail-at", "playerHistory.findLatest");
+      .post("/history/projection")
+      .set("x-fail-db", "cassandra")
+      .send({});
 
     assert.equal(response.status, 500);
-    assert.deepEqual(response.body, {
-      error: "INJECTED_FAILURE",
-      step: "playerHistory.findLatest",
-    });
+    assert.deepEqual(response.body, { error: "INJECTED_FAILURE", engine: "cassandra" });
+    assert.equal(context.store.rows.size, 0);
   });
 });

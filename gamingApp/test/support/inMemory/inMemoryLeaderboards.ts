@@ -15,16 +15,11 @@ import type {
 import type { MatchLeaderboardPort } from "../../../src/api/modules/matchClosure/business/ports/matchClosurePorts.js";
 import type { HeldStanding } from "../../../src/api/modules/sanctions/business/models/sanction.js";
 import type { ReversalLeaderboardPort } from "../../../src/api/modules/sanctions/business/ports/sanctionPorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
-
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
 type StoredStanding = { mmr: number; region: string; revision: number };
 
-/** Same order as Redis ZREVRANGE: higher score first, equal scores by descending member. */
+/** Mismo orden que ZREVRANGE de Redis: primero el puntaje más alto, a igual puntaje por miembro descendente. */
 function compareRanked(
   [leftId, left]: [string, StoredStanding],
   [rightId, right]: [string, StoredStanding],
@@ -36,18 +31,17 @@ function compareRanked(
 export class InMemoryLeaderboardRanking
   implements LeaderboardRankingPort, MatchLeaderboardPort, ReversalLeaderboardPort
 {
-  /** Boards by `${seasonId}|${mode}`, each with every ranked player of the season and mode. */
+  /** Tableros por `${seasonId}|${mode}`, cada uno con todos los jugadores rankeados de la temporada y modo. */
   readonly boards = new Map<string, Map<string, StoredStanding>>();
-  /** Problem 8, by board: `${holdId}|${playerId}` and how many holds each player has. */
+  /** Problema 8, por tablero: `${holdId}|${playerId}` y cuántas retenciones tiene cada jugador. */
   readonly holds = new Map<string, Set<string>>();
   readonly held = new Map<string, Map<string, number>>();
-  /** Revision of players a reversal removed (the Redis tombstone), by board. */
+  /** Revisión de los jugadores que sacó una reversión (la marca de Redis), por tablero. */
   readonly tombstones = new Map<string, Map<string, number>>();
   publications = 0;
   releases = 0;
 
   async top(board: LeaderboardBoard, limit: number): Promise<RankingSlice> {
-    failIfRequested("leaderboard.top");
     const ranked = this.ranked(board);
     return { entries: ranked.slice(0, limit), totalPlayers: ranked.length };
   }
@@ -57,7 +51,6 @@ export class InMemoryLeaderboardRanking
     playerId: string,
     radius: number,
   ): Promise<RankingWindow | null> {
-    failIfRequested("leaderboard.around");
     const ranked = this.ranked(board);
     const index = ranked.findIndex((entry) => entry.playerId === playerId);
     if (index === -1) return null;
@@ -73,7 +66,7 @@ export class InMemoryLeaderboardRanking
     mode: string,
     standings: readonly LeaderboardStanding[],
   ): Promise<void> {
-    failIfRequested("leaderboard.publish");
+    failIfRequested("redis");
     const key = `${seasonId}|${mode}`;
     for (const standing of standings) {
       if (this.isHeld(key, standing.playerId)) continue;
@@ -103,7 +96,7 @@ export class InMemoryLeaderboardRanking
     holdId: string,
     playerIds: readonly string[],
   ): Promise<void> {
-    failIfRequested("leaderboard.hold");
+    failIfRequested("redis");
     const key = `${seasonId}|${mode}`;
     const holds = this.holds.get(key) ?? new Set<string>();
     const held = this.held.get(key) ?? new Map<string, number>();
@@ -123,7 +116,7 @@ export class InMemoryLeaderboardRanking
     holdId: string,
     entries: readonly HeldStanding[],
   ): Promise<void> {
-    failIfRequested("leaderboard.release");
+    failIfRequested("redis");
     const key = `${seasonId}|${mode}`;
     for (const entry of entries) {
       if (this.holds.get(key)?.delete(`${holdId}|${entry.playerId}`)) {
@@ -218,7 +211,7 @@ export class InMemoryLeaderboardDirectory implements LeaderboardDirectoryPort {
   readonly regions = new Set(["NA", "LATAM", "EU"]);
   readonly players = new Map<string, DirectoryPlayer>();
 
-  /** Adds a player with a standing in `${seasonId}|${mode}`. */
+  /** Agrega un jugador con standing en `${seasonId}|${mode}`. */
   addStanding(
     seasonId: string,
     mode: string,
@@ -238,17 +231,14 @@ export class InMemoryLeaderboardDirectory implements LeaderboardDirectoryPort {
   }
 
   async findSeason(seasonId: string): Promise<SeasonInfo | null> {
-    failIfRequested("leaderboard.findSeason");
     return this.seasons.get(seasonId) ?? null;
   }
 
   async findMode(mode: string): Promise<GameModeInfo | null> {
-    failIfRequested("leaderboard.findMode");
     return this.modes.get(mode) ?? null;
   }
 
   async regionExists(region: string): Promise<boolean> {
-    failIfRequested("leaderboard.findRegion");
     return this.regions.has(region);
   }
 
@@ -257,7 +247,6 @@ export class InMemoryLeaderboardDirectory implements LeaderboardDirectoryPort {
     seasonId: string,
     mode: string,
   ): Promise<ReadonlyMap<string, PlayerSummary>> {
-    failIfRequested("leaderboard.findPlayers");
     const summaries = new Map<string, PlayerSummary>();
     for (const playerId of playerIds) {
       const player = this.players.get(playerId);

@@ -15,8 +15,9 @@ import {
   affectedSeasons,
   heldBoards,
 } from "../../../../src/api/modules/sanctions/business/services/reversalRules.js";
-import { InjectedFailureError } from "../../../../src/shared/errors.js";
+import { InjectedFailureError, type StorageEngine } from "../../../../src/shared/errors.js";
 import { requestContext } from "../../../../src/shared/requestContext.js";
+import { failOnce } from "../../../support/failOnce.js";
 import {
   boardKey,
   buildSanctionScenario,
@@ -24,8 +25,8 @@ import {
   season,
 } from "../../../support/sanctionScenario.js";
 
-const withFailure = <T>(step: string, run: () => Promise<T>): Promise<T> =>
-  requestContext.run({ failAt: step }, run);
+const withFailedDb = <T>(engine: StorageEngine, run: () => Promise<T>): Promise<T> =>
+  requestContext.run({ failDb: engine }, run);
 
 describe("SanctionService", () => {
   let context = buildSanctionScenario();
@@ -45,7 +46,7 @@ describe("SanctionService", () => {
     assert.equal(outcome.sanction.reversal.status, "completed");
     assert.deepEqual(outcome.sanction.reversal.pendingMatchIds, []);
 
-    // MongoDB: matches voided, the cheater loses what it won and the rivals get back what they lost.
+    // MongoDB: partidas anuladas, el tramposo pierde lo que ganó y los rivales recuperan lo que perdieron.
     assert.equal(results.matches.get(ids.m1)?.status, "voided");
     assert.equal(results.matches.get(ids.m2)?.voidedBySanctionId, input.sanctionId);
     assert.equal(results.matches.get(ids.m3)?.status, "closed");
@@ -61,14 +62,14 @@ describe("SanctionService", () => {
     });
     assert.equal(results.standing(season, mode, ids.bystander)?.revision, 4);
 
-    // Cassandra and Neo4j: the voided matches are gone, the legit one stays.
+    // Cassandra y Neo4j: las partidas anuladas ya no están, la limpia queda.
     const historyMatches = [...context.store.rows.values()].map((row) => row.matchId);
     assert.equal(historyMatches.includes(ids.m1), false);
     assert.equal(historyMatches.includes(ids.m2), false);
     assert.equal(historyMatches.filter((matchId) => matchId === ids.m3).length, 2);
     assert.deepEqual([...context.graph.matches], [ids.m3]);
 
-    // Redis: out of the queue, and the board shows the whole reversal (rival2 has no game left).
+    // Redis: fuera de la cola, y el tablero muestra la reversión completa (a rival2 no le queda ninguna partida).
     assert.equal(context.queue.queued.has(ids.cheater), false);
     assert.equal(context.boardMmr(ids.cheater), 1_475);
     assert.equal(context.boardMmr(ids.rival1), 1_525);
@@ -140,7 +141,7 @@ describe("SanctionService", () => {
 
   it("registers nothing when the failure happens before the sanction is written", async () => {
     await assert.rejects(
-      withFailure("sanctions.insertSanction", () => context.service.sanction(context.input())),
+      withFailedDb("mongo", () => context.service.sanction(context.input())),
       InjectedFailureError,
     );
 
@@ -156,7 +157,7 @@ describe("SanctionService", () => {
 
     const failed = await context.service.sanction(input);
 
-    // The sanction is registered and in force; the reversal stopped in the second match.
+    // La sanción está registrada y en vigor; la reversión se frenó en la segunda partida.
     assert.equal(failed.created, true);
     assert.equal(failed.sanction.status, "active");
     assert.equal(failed.sanction.reversal.status, "failed");
@@ -165,21 +166,21 @@ describe("SanctionService", () => {
     assert.deepEqual(failed.sanction.reversal.pendingMatchIds, [ids.m2]);
     assert.deepEqual(failed.sanction.reversal.completedSteps, ["queue", "hold"]);
 
-    // MongoDB already has the first match reverted...
+    // MongoDB ya tiene revertida la primera partida...
     assert.equal(results.rating(ids.cheater, mode)?.mmr, 1_500);
     assert.equal(results.rating(ids.rival1, mode)?.mmr, 1_525);
-    // ...but the board shows none of the reversal: every affected player is still held.
+    // ...pero el tablero no muestra nada de la reversión: todos los afectados siguen retenidos.
     assert.equal(context.boardMmr(ids.cheater), 1_525);
     assert.equal(context.boardMmr(ids.rival1), 1_500);
     assert.equal(context.boardMmr(ids.rival2), 1_475);
 
-    // A match closing meanwhile (problem 4) publishes what MongoDB holds: held players are
-    // skipped, the rest of the board keeps moving.
+    // Una partida que se cierra mientras tanto (problema 4) publica lo que tiene MongoDB: los
+    // retenidos se saltean y el resto del tablero sigue moviéndose.
     await context.publishAll();
     assert.equal(context.boardMmr(ids.rival1), 1_500);
     assert.equal(context.leaderboard.isHeld(boardKey, ids.bystander), false);
 
-    // Retrying completes the reversal from where it stopped.
+    // Reintentar completa la reversión desde donde se frenó.
     results.failRevertOf = null;
     const resumed = await context.service.resume(input.sanctionId);
 
@@ -197,7 +198,8 @@ describe("SanctionService", () => {
     const { ids, results } = context;
     const input = context.input();
 
-    const failed = await withFailure("leaderboard.release", () => context.service.sanction(input));
+    failOnce(context.leaderboard, "release", "redis");
+    const failed = await context.service.sanction(input);
 
     assert.equal(failed.sanction.reversal.status, "failed");
     assert.deepEqual(failed.sanction.reversal.revertedMatchIds, [ids.m1, ids.m2]);
@@ -224,7 +226,7 @@ describe("SanctionService", () => {
       reads += 1;
       const rival1 = results.standing(season, mode, ids.rival1);
       if (reads === 1 && rival1) {
-        // Right after the release read MongoDB, rival1 wins another match (problem 4)...
+        // Justo después de que el release leyó MongoDB, rival1 gana otra partida (problema 4)...
         const newer = {
           ...rival1,
           gamesPlayed: rival1.gamesPlayed + 1,
@@ -232,7 +234,7 @@ describe("SanctionService", () => {
           revision: rival1.revision + 1,
         };
         results.standings.set(`${season}|${mode}|${ids.rival1}`, newer);
-        // ...and its publication is skipped because rival1 is still held.
+        // ...y su publicación se saltea porque rival1 sigue retenido.
         await leaderboard.publish(season, mode, [newer]);
       }
       return standings;
@@ -240,14 +242,14 @@ describe("SanctionService", () => {
 
     await context.service.sanction(context.input());
 
-    // m1 gave rival1 its 25 back (1525) and the new win adds 25 more.
+    // m1 le devolvió a rival1 sus 25 (1525) y la nueva victoria suma 25 más.
     assert.equal(context.boardMmr(ids.rival1), 1_550);
     assert.equal(context.boardMmr(ids.cheater), 1_475);
   });
 
   it("records a failed queue removal and completes it on resume", async () => {
     const input = context.input();
-    const failed = await withFailure("matchmaking.leave", () => context.service.sanction(input));
+    const failed = await withFailedDb("redis", () => context.service.sanction(input));
 
     assert.equal(failed.sanction.reversal.status, "failed");
     assert.deepEqual(failed.sanction.reversal.completedSteps, []);
@@ -316,7 +318,7 @@ describe("reversal rules", () => {
   it("reverts a match of a closed season in that season and in the later ones", async () => {
     const context = buildSanctionScenario();
     const { ids, results } = context;
-    // m1 now belongs to 2026-S1, where the cheater and rival1 have a standing.
+    // m1 ahora pertenece a 2026-S1, donde cheater y rival1 tienen standing.
     const m1 = results.matches.get(ids.m1);
     if (!m1) throw new Error("missing match");
     results.matches.set(ids.m1, { ...m1, createdAt: new Date("2026-05-10T00:00:00Z") });
@@ -336,10 +338,10 @@ describe("reversal rules", () => {
 
     await context.service.sanction(context.input({ matchIds: [ids.m1] }));
 
-    // S1: the only game is gone and the delta is taken back.
+    // S1: la única partida ya no está y se descuenta el delta.
     assert.equal(results.standing("2026-S1", mode, ids.cheater)?.gamesPlayed, 0);
     assert.equal(results.standing("2026-S1", mode, ids.cheater)?.mmr, 1_500);
-    // S2 carries the delta over (MMR does not reset) but still has all its games.
+    // S2 arrastra el delta (el MMR no se reinicia) pero conserva todas sus partidas.
     assert.equal(results.standing(season, mode, ids.cheater)?.mmr, 1_500);
     assert.equal(results.standing(season, mode, ids.cheater)?.gamesPlayed, 3);
     assert.equal(context.leaderboard.releases, 2);
@@ -386,12 +388,12 @@ describe("PlayerProfileService", () => {
     assert.equal(profile.player.username, "cheater");
     assert.equal(profile.seasonId, season);
     assert.deepEqual(profile.ratings, [{ gamesPlayed: 1, mmr: 1_475, mode }]);
-    // Only the active season: bystander 1600, rival1 1525, cheater 1475 (rival2 was removed).
+    // Solo la temporada activa: bystander 1600, rival1 1525, cheater 1475 (rival2 salió).
     assert.equal(profile.leaderboards.length, 1);
     assert.deepEqual(profile.leaderboards[0]?.global, { position: 3, totalPlayers: 3 });
     assert.deepEqual(profile.leaderboards[0]?.regional, { position: 3, totalPlayers: 3 });
     assert.equal(profile.sanctions[0]?.inForce, true);
-    // The voided matches left the history; only the legit one remains.
+    // Las partidas anuladas salieron del historial; solo queda la limpia.
     assert.deepEqual(
       profile.recentMatches.map((match) => match.matchId),
       [ids.m3],

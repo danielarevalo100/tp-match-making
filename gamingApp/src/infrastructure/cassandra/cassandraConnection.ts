@@ -11,7 +11,7 @@ type CassandraConnectionOptions = {
   port: number;
 };
 
-// The keyspace must already exist (infra/cassandra/init.cql), otherwise every attempt fails.
+// El keyspace tiene que existir (infra/cassandra/init.cql); si no, todos los intentos fallan.
 export function connectToCassandra(options: CassandraConnectionOptions): Promise<Client> {
   return retry(options.attempts, options.delayMs, async () => {
     const client = new Client({
@@ -19,8 +19,8 @@ export function connectToCassandra(options: CassandraConnectionOptions): Promise
       keyspace: options.keyspace,
       localDataCenter: options.localDataCenter,
       queryOptions: {
-        // With replication_factor 1 this is the same as ONE; with more replicas a write is
-        // only acknowledged once a majority has it, so an acknowledged event is not lost.
+        // Con replication_factor 1 es lo mismo que ONE; con más réplicas una escritura solo se
+        // confirma cuando la tiene la mayoría, así un evento confirmado no se pierde.
         consistency: types.consistencies.localQuorum,
         prepare: true,
       },

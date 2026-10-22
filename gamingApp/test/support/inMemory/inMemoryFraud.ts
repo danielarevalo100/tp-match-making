@@ -8,19 +8,14 @@ import type {
   PlayerNamesPort,
   ReportsPort,
 } from "../../../src/api/modules/fraudDetection/business/ports/fraudPorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
-
-/** Mirrors the Cypher in `neo4jMatchGraphAdapter`: if the query changes, change this too. */
+/** Replica el Cypher de `neo4jMatchGraphAdapter`: si cambia la consulta, cambiar esto también. */
 export class InMemoryMatchGraph implements MatchGraphPort {
   readonly matches = new Map<string, ClosedMatch>();
 
   async upsertMatches(matches: readonly ClosedMatch[]): Promise<void> {
-    failIfRequested("fraud.upsertMatches");
+    failIfRequested("neo4j");
     for (const match of matches) this.matches.set(match.id, match);
   }
 
@@ -30,7 +25,6 @@ export class InMemoryMatchGraph implements MatchGraphPort {
     mode?: string | undefined;
     since: Date;
   }): Promise<OpposingPair[]> {
-    failIfRequested("fraud.findOpposingPairs");
     const pairs = new Map<string, OpposingPair>();
 
     for (const match of this.matches.values()) {
@@ -73,7 +67,6 @@ export class InMemoryReports implements ReportsPort {
   }[] = [];
 
   async findReportedByMany(since: Date, minReporters: number): Promise<ReportedPlayerReports[]> {
-    failIfRequested("fraud.findReportedByMany");
     const byReported = new Map<string, ReportedPlayerReports["reports"][number][]>();
     for (const report of this.reports) {
       if (report.createdAt < since || report.reporterPlayerId === null) continue;
@@ -99,7 +92,6 @@ export class InMemoryPlayerNames implements PlayerNamesPort {
   readonly names = new Map<string, string>();
 
   async findUsernames(playerIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
-    failIfRequested("fraud.findUsernames");
     return new Map(
       playerIds.flatMap((id) => {
         const name = this.names.get(id);

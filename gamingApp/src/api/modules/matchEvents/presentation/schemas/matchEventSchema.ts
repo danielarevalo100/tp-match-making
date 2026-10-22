@@ -3,7 +3,7 @@ import { z } from "zod";
 import { matchEventTypes } from "../../business/models/matchEvent.js";
 
 const maxDetailBytes = 2_048;
-// Largest value a JavaScript Date can hold.
+// Valor más grande que puede guardar un Date de JavaScript.
 const maxTsMs = 8_640_000_000_000_000;
 
 export const matchIdParamSchema = z.object({ matchId: z.string().uuid() }).strict();
@@ -21,8 +21,8 @@ export const recordEventSchema = z
     playerId: z.string().uuid(),
     points: z.number().int().min(1).max(1_000).optional(),
     targetPlayerId: z.string().uuid().optional(),
-    // Required (not defaulted to "now"): a retry must carry the same timestamp or it would be a
-    // different row in the log.
+    // Obligatorio (no se completa con "ahora"): un reintento tiene que traer el mismo timestamp o
+    // sería otra fila del log.
     tsMs: z.number().int().min(1).max(maxTsMs),
     type: z.enum(matchEventTypes),
   })

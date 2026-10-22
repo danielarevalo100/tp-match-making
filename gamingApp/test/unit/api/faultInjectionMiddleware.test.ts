@@ -5,16 +5,16 @@ import { Router } from "express";
 import request from "supertest";
 
 import { createApp } from "../../../src/api/app.js";
-import { failAtHeader } from "../../../src/api/middlewares/faultInjectionMiddleware.js";
+import { failDbHeader } from "../../../src/api/middlewares/faultInjectionMiddleware.js";
 import { requestContext } from "../../../src/shared/requestContext.js";
 
-type ContextBody = { failAt: string | null };
+type ContextBody = { failDb: string | null };
 
 function buildTestApp() {
   const router = Router();
   router.get("/", async (_request, response) => {
     await new Promise((resolve) => setTimeout(resolve, 5));
-    response.json({ failAt: requestContext.getStore()?.failAt ?? null });
+    response.json({ failDb: requestContext.getStore()?.failDb ?? null });
   });
 
   return createApp({
@@ -27,17 +27,23 @@ function buildTestApp() {
 describe("fault injection middleware", () => {
   const app = buildTestApp();
 
-  it("exposes the requested failure step to asynchronous handlers", async () => {
-    const response = await request(app).get("/context").set(failAtHeader, "players.create");
+  it("exposes the database to fail to asynchronous handlers", async () => {
+    const response = await request(app).get("/context").set(failDbHeader, "Mongo");
 
     assert.equal(response.status, 200);
-    assert.equal((response.body as ContextBody).failAt, "players.create");
+    assert.equal((response.body as ContextBody).failDb, "mongo");
   });
 
-  it("leaves failAt empty when the header is absent", async () => {
+  it("ignores an unknown database", async () => {
+    const response = await request(app).get("/context").set(failDbHeader, "oracle");
+
+    assert.equal((response.body as ContextBody).failDb, null);
+  });
+
+  it("leaves failDb empty when the header is absent", async () => {
     const response = await request(app).get("/context");
 
     assert.equal(response.status, 200);
-    assert.equal((response.body as ContextBody).failAt, null);
+    assert.equal((response.body as ContextBody).failDb, null);
   });
 });

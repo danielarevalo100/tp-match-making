@@ -5,7 +5,7 @@ import type {
   SanctionType,
 } from "../../business/models/sanction.js";
 
-/** `sanctions` document (see infra/mongo/init.js). `adminId` keeps the original field name. */
+/** Documento de `sanctions` (ver infra/mongo/init.js). `adminId` conserva el nombre original del campo. */
 export type SanctionDocument = {
   _id: string;
   adminId: string;
@@ -33,8 +33,8 @@ export function toSanctionRecord(document: SanctionDocument): SanctionRecord {
     playerId: document.playerId,
     reason: document.reason,
     reportId: document.reportId ?? null,
-    // Sanctions written before problem 8 (or by the problem 1 demo) void no match: they are read
-    // as a reversal with nothing to do.
+    // Las sanciones escritas antes del problema 8 (o por la demo del problema 1) no anulan
+    // partidas: se leen como una reversión sin nada que hacer.
     reversal: document.reversal ?? {
       attempts: 0,
       completedAt: document.createdAt,

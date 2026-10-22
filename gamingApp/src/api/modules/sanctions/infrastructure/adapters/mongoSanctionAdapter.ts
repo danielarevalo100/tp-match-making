@@ -42,15 +42,15 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   find(sanctionId: string): Promise<SanctionRecord | null> {
-    return this.run("sanctions.findSanction", async () => {
+    return this.read(async () => {
       const document = await this.sanctions.findOne({ _id: sanctionId });
       return document ? toSanctionRecord(document) : null;
     });
   }
 
-  // `_id` is the caller's sanctionId: a retry hits the unique index instead of a second sanction.
+  // `_id` es el sanctionId de quien llama: un reintento choca con el índice único en lugar de crear otra sanción.
   insert(sanction: SanctionRecord): Promise<boolean> {
-    return this.run("sanctions.insertSanction", async () => {
+    return this.write(async () => {
       try {
         await this.sanctions.insertOne(toSanctionDocument(sanction));
         return true;
@@ -62,13 +62,13 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   playerExists(playerId: string): Promise<boolean> {
-    return this.run("sanctions.findPlayer", async () => {
+    return this.read(async () => {
       return (await this.players.countDocuments({ _id: playerId }, { limit: 1 })) > 0;
     });
   }
 
   findAdministrator(administratorId: string): Promise<AdministratorInfo | null> {
-    return this.run("sanctions.findAdministrator", async () => {
+    return this.read(async () => {
       const administrator = await this.administrators.findOne(
         { _id: administratorId },
         { projection: { active: 1 } },
@@ -78,7 +78,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   findReport(reportId: string): Promise<ReportInfo | null> {
-    return this.run("sanctions.findReport", async () => {
+    return this.read(async () => {
       const report = await this.reports.findOne(
         { _id: reportId },
         { projection: { matchId: 1, reportedPlayerId: 1 } },
@@ -94,7 +94,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   beginReversal(sanctionId: string, at: Date): Promise<void> {
-    return this.run("sanctions.beginReversal", async () => {
+    return this.write(async () => {
       const result = await this.sanctions.updateOne(
         { _id: sanctionId, "reversal.status": { $in: ["pending", "failed", "reverting"] } },
         {
@@ -118,7 +118,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
     at: Date,
     heldBoards?: readonly HeldBoard[],
   ): Promise<void> {
-    return this.run("sanctions.markStep", async () => {
+    return this.write(async () => {
       await this.sanctions.updateOne(
         { _id: sanctionId },
         {
@@ -132,7 +132,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   markMatchReverted(sanctionId: string, matchId: string, at: Date): Promise<void> {
-    return this.run("sanctions.markMatchReverted", async () => {
+    return this.write(async () => {
       await this.sanctions.updateOne(
         { _id: sanctionId },
         {
@@ -144,7 +144,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   completeReversal(sanctionId: string, at: Date): Promise<void> {
-    return this.run("sanctions.completeReversal", async () => {
+    return this.write(async () => {
       await this.sanctions.updateOne(
         { _id: sanctionId },
         {
@@ -160,7 +160,7 @@ export class MongoSanctionAdapter extends BaseMongoAdapter implements SanctionRe
   }
 
   failReversal(sanctionId: string, message: string, at: Date): Promise<void> {
-    return this.run("sanctions.failReversal", async () => {
+    return this.write(async () => {
       await this.sanctions.updateOne(
         { _id: sanctionId, "reversal.status": "reverting" },
         {

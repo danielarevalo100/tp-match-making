@@ -24,9 +24,9 @@ export class MongoClosedMatchAdapter extends BaseMongoAdapter implements ClosedM
     this.matches = database.collection<ClosedMatchDocument>(mongoCollections.matches);
   }
 
-  // Only matches whose scoring is applied have a final scoreboard worth keeping in the history.
+  // Solo las partidas con scoring aplicado tienen un marcador final para guardar en el historial.
   listClosedMatches(query: ClosedMatchQuery): Promise<ClosedMatch[]> {
-    return this.run("playerHistory.listClosedMatches", async () => {
+    return this.read(async () => {
       const filter: Filter<ClosedMatchDocument> = {
         "closure.tsMs": query.since ? { $gte: query.since.getTime() } : { $exists: true },
         finalScoreboard: { $exists: true },

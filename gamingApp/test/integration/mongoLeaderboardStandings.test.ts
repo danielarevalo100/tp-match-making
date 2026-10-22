@@ -12,8 +12,9 @@ import { mongoCollections } from "../../src/shared/storageKeys.js";
 
 const mongoUri = process.env["MONGODB_URI"];
 
-// Needs the schema and catalogs from infra/mongo/init.js: the validators check the documents the
-// rating update produces, and `ranked_1v1` / the active `2026-S2` season decide the leaderboard.
+// Necesita el esquema y los catálogos de infra/mongo/init.js: los validadores controlan los
+// documentos que produce la actualización de rating, y `ranked_1v1` / la temporada activa `2026-S2`
+// deciden el leaderboard.
 describe("MongoDB season standings (real MongoDB)", { skip: mongoUri === undefined }, () => {
   let connection: MongoConnection;
   let closure: MongoMatchClosureAdapter;

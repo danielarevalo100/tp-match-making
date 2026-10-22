@@ -4,7 +4,7 @@ import type { SanctionView } from "../../business/models/sanction.js";
 import type { SanctionService } from "../../business/services/sanctionService.js";
 import { createSanctionSchema, sanctionParamsSchema } from "../schemas/sanctionSchema.js";
 
-/** 202 while the reversal is incomplete: the sanction is in force and a retry continues it. */
+/** 202 mientras la reversión está incompleta: la sanción está en vigor y un reintento la continúa. */
 function reversalStatusCode(sanction: SanctionView, completedCode: number): number {
   return sanction.reversal.status === "completed" ? completedCode : 202;
 }
@@ -14,7 +14,7 @@ export class SanctionController {
 
   readonly create = async (request: Request, response: Response): Promise<void> => {
     const body = createSanctionSchema.parse(request.body as unknown);
-    // The service uses null for "not given".
+    // El servicio usa null para "no informado".
     const outcome = await this.sanctions.sanction({
       ...body,
       description: body.description ?? null,

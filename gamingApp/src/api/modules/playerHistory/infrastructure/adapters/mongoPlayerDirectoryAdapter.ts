@@ -29,7 +29,7 @@ export class MongoPlayerDirectoryAdapter extends BaseMongoAdapter implements Pla
   }
 
   findPlayer(playerId: string): Promise<HistoryPlayer | null> {
-    return this.run("playerHistory.findPlayer", async () => {
+    return this.read(async () => {
       const player = await this.players.findOne(
         { _id: playerId },
         { projection: { ratings: 1, username: 1 } },
@@ -43,7 +43,7 @@ export class MongoPlayerDirectoryAdapter extends BaseMongoAdapter implements Pla
   }
 
   findActiveSeason(): Promise<ActiveSeason | null> {
-    return this.run("playerHistory.findActiveSeason", async () => {
+    return this.read(async () => {
       const season = await this.seasons.findOne({ status: "active" });
       return season ? { endsAt: season.endsAt, id: season._id, startsAt: season.startsAt } : null;
     });

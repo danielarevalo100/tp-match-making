@@ -21,13 +21,13 @@ export type MatchRecord = {
 
 export type ReserveOutcome =
   | { status: "reserved" }
-  // Tickets that were no longer in the queue; nothing was written.
+  // Tickets que ya no estaban en la cola; no se escribió nada.
   | { status: "missing"; playerIds: readonly string[] };
 
 export type CommitOutcome = { status: "committed" } | { status: "abandoned" };
 
 export type RestoreOutcome = {
-  // Players put back in the queue with their original enqueuedAt.
+  // Jugadores devueltos a la cola con su enqueuedAt original.
   restored: readonly string[];
   status: "rolled_back" | "already_rolled_back" | "not_found" | "committed";
 };

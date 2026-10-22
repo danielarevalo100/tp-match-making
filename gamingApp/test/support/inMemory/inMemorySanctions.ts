@@ -22,13 +22,8 @@ import type {
   SanctionQueuePort,
   SanctionRepositoryPort,
 } from "../../../src/api/modules/sanctions/business/ports/sanctionPorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 import type { InMemoryPlayerHistoryStore } from "./inMemoryPlayerHistory.js";
-
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
 
 function copy(record: SanctionRecord): SanctionRecord {
   return structuredClone(record);
@@ -41,35 +36,31 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
   readonly reports = new Map<string, ReportInfo>();
 
   async find(sanctionId: string): Promise<SanctionRecord | null> {
-    failIfRequested("sanctions.findSanction");
     const record = this.sanctions.get(sanctionId);
     return record ? copy(record) : null;
   }
 
   async insert(sanction: SanctionRecord): Promise<boolean> {
-    failIfRequested("sanctions.insertSanction");
+    failIfRequested("mongo");
     if (this.sanctions.has(sanction.id)) return false;
     this.sanctions.set(sanction.id, copy(sanction));
     return true;
   }
 
   async playerExists(playerId: string): Promise<boolean> {
-    failIfRequested("sanctions.findPlayer");
     return this.players.has(playerId);
   }
 
   async findAdministrator(administratorId: string): Promise<AdministratorInfo | null> {
-    failIfRequested("sanctions.findAdministrator");
     return this.administrators.get(administratorId) ?? null;
   }
 
   async findReport(reportId: string): Promise<ReportInfo | null> {
-    failIfRequested("sanctions.findReport");
     return this.reports.get(reportId) ?? null;
   }
 
   async beginReversal(sanctionId: string, at: Date): Promise<void> {
-    failIfRequested("sanctions.beginReversal");
+    failIfRequested("mongo");
     const record = this.sanctions.get(sanctionId);
     if (!record || record.reversal.status === "completed") {
       throw new Error(`Sanction ${sanctionId} has no reversal to continue.`);
@@ -89,7 +80,7 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
     at: Date,
     heldBoards?: readonly HeldBoard[],
   ): Promise<void> {
-    failIfRequested("sanctions.markStep");
+    failIfRequested("mongo");
     this.update(sanctionId, (reversal) => ({
       ...reversal,
       completedSteps: reversal.completedSteps.includes(step)
@@ -101,7 +92,7 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
   }
 
   async markMatchReverted(sanctionId: string, matchId: string, at: Date): Promise<void> {
-    failIfRequested("sanctions.markMatchReverted");
+    failIfRequested("mongo");
     this.update(sanctionId, (reversal) => ({
       ...reversal,
       revertedMatchIds: reversal.revertedMatchIds.includes(matchId)
@@ -112,7 +103,7 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
   }
 
   async completeReversal(sanctionId: string, at: Date): Promise<void> {
-    failIfRequested("sanctions.completeReversal");
+    failIfRequested("mongo");
     this.update(sanctionId, (reversal) => ({
       ...reversal,
       completedAt: at,
@@ -123,7 +114,7 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
   }
 
   async failReversal(sanctionId: string, message: string, at: Date): Promise<void> {
-    failIfRequested("sanctions.failReversal");
+    failIfRequested("mongo");
     if (this.sanctions.get(sanctionId)?.reversal.status !== "reverting") return;
     this.update(sanctionId, (reversal) => ({
       ...reversal,
@@ -145,7 +136,7 @@ export class InMemorySanctionRepository implements SanctionRepositoryPort {
 
 type Rating = { gamesPlayed: number; mmr: number };
 
-/** Mirrors MongoResultReversalAdapter, including the pipeline's rules for season standings. */
+/** Replica MongoResultReversalAdapter, incluidas las reglas del pipeline para los standings de temporada. */
 export class InMemoryResultReversal implements ResultReversalPort {
   readonly matches = new Map<string, ReversibleMatch>();
   catalog: SeasonCatalog = {
@@ -165,19 +156,18 @@ export class InMemoryResultReversal implements ResultReversalPort {
       },
     ],
   };
-  /** Ratings by `${playerId}|${mode}`. */
+  /** Ratings por `${playerId}|${mode}`. */
   readonly ratings = new Map<string, Rating>();
-  /** Season standings by `${seasonId}|${mode}|${playerId}`. */
+  /** Standings de temporada por `${seasonId}|${mode}|${playerId}`. */
   readonly standings = new Map<string, SeasonStanding>();
-  /** `${matchId}|${playerId}` problem 4 applied, and the ones already reverted. */
+  /** `${matchId}|${playerId}` que aplicó el problema 4, y los ya revertidos. */
   readonly applied = new Set<string>();
   readonly reverted = new Set<string>();
   ratingReversals = 0;
-  /** Makes `revertRating` fail for this match, as a storage error would. */
+  /** Hace fallar `revertRating` para esta partida, como lo haría un error de la base. */
   failRevertOf: string | null = null;
 
   async findMatches(matchIds: readonly string[]): Promise<ReversibleMatch[]> {
-    failIfRequested("sanctions.findMatches");
     return matchIds.flatMap((matchId) => {
       const match = this.matches.get(matchId);
       return match ? [structuredClone(match)] : [];
@@ -185,12 +175,11 @@ export class InMemoryResultReversal implements ResultReversalPort {
   }
 
   async findSeasonCatalog(): Promise<SeasonCatalog> {
-    failIfRequested("sanctions.findSeasonCatalog");
     return structuredClone(this.catalog);
   }
 
   async voidMatch(matchId: string, sanctionId: string, _at: Date): Promise<void> {
-    failIfRequested("sanctions.voidMatch");
+    failIfRequested("mongo");
     const match = this.matches.get(matchId);
     if (!match) throw new MatchNotReversibleError(matchId, "not_found");
     if (match.status === "voided") return;
@@ -201,7 +190,7 @@ export class InMemoryResultReversal implements ResultReversalPort {
   }
 
   async revertRating(reversal: RatingReversal): Promise<void> {
-    failIfRequested("sanctions.revertRating");
+    failIfRequested("mongo");
     if (this.failRevertOf === reversal.matchId) {
       throw new Error(`Simulated storage failure reverting match ${reversal.matchId}.`);
     }
@@ -239,7 +228,6 @@ export class InMemoryResultReversal implements ResultReversalPort {
     seasonId: string,
     mode: string,
   ): Promise<SeasonStanding[]> {
-    failIfRequested("sanctions.findStandings");
     return playerIds.flatMap((playerId) => {
       const standing = this.standings.get(`${seasonId}|${mode}|${playerId}`);
       return standing ? [{ ...standing }] : [];
@@ -259,17 +247,17 @@ export class InMemorySanctionQueue implements SanctionQueuePort {
   readonly queued = new Set<string>();
 
   async leave(playerId: string): Promise<boolean> {
-    failIfRequested("matchmaking.leave");
+    failIfRequested("redis");
     return this.queued.delete(playerId);
   }
 }
 
-/** Deletes from the problem 6 fake, keyed like the Cassandra primary key. */
+/** Borra del doble del problema 6, con la misma clave que la primaria de Cassandra. */
 export class InMemoryHistoryCleanup implements HistoryCleanupPort {
   constructor(private readonly store: InMemoryPlayerHistoryStore) {}
 
   async deleteMatch(matchId: string, endedAt: Date, playerIds: readonly string[]): Promise<void> {
-    failIfRequested("sanctions.deleteHistory");
+    failIfRequested("cassandra");
     for (const playerId of playerIds) {
       this.store.rows.delete(`${playerId}|${String(endedAt.getTime())}|${matchId}`);
     }
@@ -280,7 +268,7 @@ export class InMemoryGraphCleanup implements GraphCleanupPort {
   readonly matches = new Set<string>();
 
   async deleteMatch(matchId: string): Promise<void> {
-    failIfRequested("sanctions.deleteGraph");
+    failIfRequested("neo4j");
     this.matches.delete(matchId);
   }
 }
@@ -292,17 +280,14 @@ export class InMemoryProfileDirectory implements ProfileDirectoryPort {
   activeSeasonId: string | null = "2026-S2";
 
   async findPlayer(playerId: string): Promise<ProfileDirectoryEntry | null> {
-    failIfRequested("profile.findPlayer");
     return this.players.get(playerId) ?? null;
   }
 
   async findActiveSeasonId(): Promise<string | null> {
-    failIfRequested("profile.findActiveSeason");
     return this.activeSeasonId;
   }
 
   async findSanctions(playerId: string, limit: number): Promise<ProfileSanctionRecord[]> {
-    failIfRequested("profile.findSanctions");
     return this.sanctions
       .filter((sanction) => this.sanctionOwners.get(sanction.sanctionId) === playerId)
       .sort((left, right) => right.startsAt.getTime() - left.startsAt.getTime())

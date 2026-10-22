@@ -56,7 +56,7 @@ describe("buildMatchFixingGroups", () => {
       ["b", "c"],
     );
     assert.equal(groups[0]?.totalMatches, 14);
-    // the beneficiary can be the second player of the pair
+    // el beneficiado puede ser el segundo jugador del par
     assert.equal(groups[1]?.beneficiary.playerId, "k");
     assert.equal(groups[1]?.partners[0]?.playerId, "d");
   });
@@ -206,17 +206,17 @@ describe("FraudDetectionService", () => {
   async function plantScenario(): Promise<void> {
     let n = 0;
     const id = (): string => `m-${String((n += 1)).padStart(4, "0")}`;
-    // boss beats feederA 6 times and feederB 5 times, never loses to them
+    // boss le gana 6 veces a feederA y 5 a feederB, y nunca pierde con ellos
     for (let i = 0; i < 6; i++)
       context.source.matches.push(duel(id(), ring.boss, ring.feederA, i + 1));
     for (let i = 0; i < 5; i++)
       context.source.matches.push(duel(id(), ring.boss, ring.feederB, i + 1));
-    // an honest rivalry: 4-4
+    // una rivalidad honesta: 4-4
     for (let i = 0; i < 4; i++)
       context.source.matches.push(duel(id(), ring.boss, ring.honest, i + 1));
     for (let i = 0; i < 4; i++)
       context.source.matches.push(duel(id(), ring.honest, ring.boss, i + 1));
-    // old matches are outside the window
+    // las partidas viejas quedan fuera de la ventana
     for (let i = 0; i < 6; i++) context.source.matches.push(duel(id(), "p5", "p6", 60 + i));
 
     await context.projection.project({ afterId: null, limit: 1_000 });
@@ -237,7 +237,7 @@ describe("FraudDetectionService", () => {
         reporterPlayerId: reporter,
       });
     });
-    // an automatic report does not count as a reporter
+    // un reporte automático no cuenta como autor
     context.reports.reports.push({
       createdAt: reportedAt(1),
       id: randomUUID(),
@@ -322,9 +322,10 @@ describe("FraudDetectionService", () => {
     await context.projection.project({ afterId: null, limit: 1_000 });
     assert.equal(context.graph.matches.size, before);
 
+    context.source.matches.push(duel("m-new", "a", "b", 1));
     await assert.rejects(
-      requestContext.run({ failAt: "fraud.findOpposingPairs" }, () =>
-        context.detection.detectMatchFixing(criteria),
+      requestContext.run({ failDb: "neo4j" }, () =>
+        context.projection.project({ afterId: null, limit: 1_000 }),
       ),
       InjectedFailureError,
     );
@@ -366,15 +367,14 @@ describe("fraud API", () => {
 
   it("rejects invalid parameters and reports injected failures", async () => {
     const invalid = await request(context.app).get("/fraud/cross-reports?minReporters=1");
+    context.source.matches.push(duel("m-1", "a", "b", 1));
     const injected = await request(context.app)
-      .get("/fraud/cross-reports")
-      .set("x-fail-at", "fraud.findReportedByMany");
+      .post("/fraud/projection")
+      .set("x-fail-db", "neo4j")
+      .send({});
 
     assert.equal(invalid.status, 400);
     assert.equal(injected.status, 500);
-    assert.deepEqual(injected.body, {
-      error: "INJECTED_FAILURE",
-      step: "fraud.findReportedByMany",
-    });
+    assert.deepEqual(injected.body, { error: "INJECTED_FAILURE", engine: "neo4j" });
   });
 });

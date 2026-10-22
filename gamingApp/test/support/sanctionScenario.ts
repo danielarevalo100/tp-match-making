@@ -22,16 +22,16 @@ export const boardKey = `${season}|${mode}`;
 type Side = { delta: number; playerId: string; result: "win" | "loss" };
 
 /**
- * State problem 4 leaves after three ranked matches, all in season 2026-S2 (every player starts at
- * 1500, +25 per win, -25 per loss):
+ * Estado que deja el problema 4 después de tres partidas rankeadas, todas en la temporada 2026-S2
+ * (cada jugador empieza en 1500, +25 por victoria, -25 por derrota):
  *
- *   m1  cheater wins against rival1   (cheated)
- *   m2  cheater wins against rival2   (cheated)
- *   m3  rival1 wins against cheater   (legit)
+ *   m1  cheater le gana a rival1   (con trampa)
+ *   m2  cheater le gana a rival2   (con trampa)
+ *   m3  rival1 le gana a cheater   (limpia)
  *
- *   cheater 1525 (3 games)  rival1 1500 (2 games)  rival2 1475 (1 game)  bystander 1600 (4 games)
+ *   cheater 1525 (3 partidas)  rival1 1500 (2 partidas)  rival2 1475 (1 partida)  bystander 1600 (4 partidas)
  *
- * The bystander never played them: it shares the board but must not be touched.
+ * El bystander nunca jugó contra ellos: comparte el tablero pero no se tiene que tocar.
  */
 export function buildSanctionScenario() {
   const ids = {
@@ -149,7 +149,7 @@ export function buildSanctionScenario() {
   const service = new SanctionService(repository, results, queue, history, graph, leaderboard);
   const profiles = new PlayerProfileService(directory, leaderboard, store);
 
-  /** Problem 5's view of the board as it is right now (publishes what MongoDB holds). */
+  /** Lo que muestra el tablero del problema 5 en este momento (publica lo que tiene MongoDB). */
   const publishAll = async (): Promise<void> => {
     await leaderboard.publish(
       season,

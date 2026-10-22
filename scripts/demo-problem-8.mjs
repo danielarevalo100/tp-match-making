@@ -1,24 +1,25 @@
 #!/usr/bin/env node
-// Problem 8 demo: sanction with result reversal, and the player profile across every engine.
+// Demo del problema 8: sanción con reversión de resultados, y el perfil del jugador en todas las bases.
 //
-// Needs the whole Compose stack (MongoDB with the schema applied, Redis, Cassandra, Neo4j and
-// gaming-app) and the gamingApp dependencies installed (`pnpm install` in gamingApp): the script
-// borrows the app's MongoDB and Redis drivers to seed the starting state and to show what each
-// engine holds. It:
-//   1. seeds three players and three closed ranked matches exactly as problem 4 leaves them
-//      (ratings applied, season standings, final scoreboards), plus an administrator and a report,
-//      then projects them to the history (problem 6), the graph (problem 7) and the leaderboard
-//      (problem 5) through the API
-//   2. sanctions the cheater for matches 1 and 2 with a failure injected after the first match:
-//      the sanction is in force, MongoDB has match 1 reverted, but the leaderboard shows none of it
-//   3. a leaderboard rebuild while the reversal is incomplete cannot publish the held players
-//   4. resume completes the reversal: ratings, history and leaderboard all show it at once
-//   5. retries change nothing, a failure before registering leaves no sanction, invalid requests
-//      are refused, and the sanctioned player cannot queue
+// Necesita todo el stack de Compose (MongoDB con el esquema aplicado, Redis, Cassandra, Neo4j y
+// gaming-app) y las dependencias de gamingApp instaladas (`pnpm install` en gamingApp): el script
+// usa los drivers de MongoDB y Redis de la app para cargar el estado inicial y mostrar qué tiene
+// cada base. Hace:
+//   1. carga tres jugadores y tres partidas rankeadas cerradas tal como las deja el problema 4
+//      (ratings aplicados, standings de temporada, marcadores finales), más un administrador y un
+//      reporte, y las proyecta al historial (problema 6), al grafo (problema 7) y al leaderboard
+//      (problema 5) usando la API
+//   2. sanciona al tramposo por las partidas 1 y 2 con una falla de Cassandra en la primera: la
+//      sanción está en vigor, MongoDB tiene la partida 1 revertida, pero el leaderboard no muestra
+//      nada de eso
+//   3. un rebuild del leaderboard con la reversión incompleta no puede publicar a los retenidos
+//   4. resume completa la reversión: ratings, historial y leaderboard la muestran de una vez
+//   5. los reintentos no cambian nada, una falla antes de registrar no deja sanción, los pedidos
+//      inválidos se rechazan, y el jugador sancionado no puede entrar a la cola
 //
 //   node scripts/demo-problem-8.mjs
 //
-// Overrides (environment): APP_URL, MONGODB_URI, MONGODB_DB_NAME, REDIS_URL, MODE (ranked_1v1).
+// Se puede cambiar (entorno): APP_URL, MONGODB_URI, MONGODB_DB_NAME, REDIS_URL, MODE (ranked_1v1).
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -40,7 +41,7 @@ function readEnvFile() {
           .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
       );
     } catch {
-      // Try the next file.
+      // Probar con el próximo archivo.
     }
   }
   return {};
@@ -105,8 +106,8 @@ try {
     rival1: randomUUID(),
     rival2: randomUUID(),
   };
-  // Everyone starts at 1500: m1 cheater beats rival1, m2 cheater beats rival2 (both cheated),
-  // m3 rival1 beats cheater (legit). Rival2 plays from NA, the others from LATAM.
+  // Todos empiezan en 1500: en m1 el tramposo le gana a rival1, en m2 a rival2 (las dos con
+  // trampa), y en m3 rival1 le gana al tramposo (limpia). Rival2 juega desde NA, el resto desde LATAM.
   const matches = [
     { id: ids.m1, sides: [[ids.cheater, "win", 25, 1_500], [ids.rival1, "loss", -25, 1_500]] },
     { id: ids.m2, sides: [[ids.cheater, "win", 25, 1_525], [ids.rival2, "loss", -25, 1_500]] },
@@ -223,10 +224,8 @@ try {
     return position.status === 200 ? position.body.player.mmr : position.body.error;
   };
 
-  console.log("\n== 2. Sanction with a failure after the first match (x-fail-at: sanctions.markMatchReverted)");
-  response = await call("POST", "/sanctions", sanction, {
-    "x-fail-at": "sanctions.markMatchReverted",
-  });
+  console.log("\n== 2. Sanction with a Cassandra failure in the first match (x-fail-db: cassandra)");
+  response = await call("POST", "/sanctions", sanction, { "x-fail-db": "cassandra" });
   check(response.status, 202, "202: the sanction is registered, the reversal is incomplete");
   check(response.body.status, "active", "the sanction is in force");
   check(response.body.reversal.status, "failed", "the reversal is recorded as failed");
@@ -282,7 +281,7 @@ try {
   check(await mmrOf(ids.cheater), 1_475, "and reverts nothing again");
 
   const other = { ...sanction, sanctionId: randomUUID() };
-  response = await call("POST", "/sanctions", other, { "x-fail-at": "sanctions.insertSanction" });
+  response = await call("POST", "/sanctions", other, { "x-fail-db": "mongo" });
   check(`${response.status}/${response.body.error}`, "500/INJECTED_FAILURE", "failure before the insert");
   response = await call("GET", `/sanctions/${other.sanctionId}`);
   check(response.status, 404, "so no sanction was registered");

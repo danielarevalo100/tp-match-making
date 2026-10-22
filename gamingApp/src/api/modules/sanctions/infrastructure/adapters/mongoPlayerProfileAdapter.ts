@@ -39,7 +39,7 @@ export class MongoPlayerProfileAdapter extends BaseMongoAdapter implements Profi
   }
 
   findPlayer(playerId: string): Promise<ProfileDirectoryEntry | null> {
-    return this.run("profile.findPlayer", async () => {
+    return this.read(async () => {
       const player = await this.players.findOne(
         { _id: playerId },
         {
@@ -85,15 +85,15 @@ export class MongoPlayerProfileAdapter extends BaseMongoAdapter implements Profi
   }
 
   findActiveSeasonId(): Promise<string | null> {
-    return this.run("profile.findActiveSeason", async () => {
+    return this.read(async () => {
       const season = await this.seasons.findOne({ status: "active" }, { projection: { _id: 1 } });
       return season?._id ?? null;
     });
   }
 
-  // Served by the { playerId, createdAt } index of `sanctions`.
+  // Lo resuelve el índice { playerId, createdAt } de `sanctions`.
   findSanctions(playerId: string, limit: number): Promise<ProfileSanctionRecord[]> {
-    return this.run("profile.findSanctions", async () => {
+    return this.read(async () => {
       const documents = await this.sanctions
         .find({ playerId }, { projection: { adminId: 0, description: 0 } })
         .sort({ createdAt: -1 })

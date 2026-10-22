@@ -12,7 +12,7 @@ const redisUrl = process.env["REDIS_URL"];
 describe("RedisLeaderboardAdapter (real Redis)", { skip: redisUrl === undefined }, () => {
   let redis: Redis;
   let leaderboard: RedisLeaderboardAdapter;
-  // A throwaway season per run keeps the keys apart from real boards.
+  // Una temporada descartable por corrida separa las claves de los tableros reales.
   const seasonId = `test-${randomUUID().slice(0, 8)}`;
   const mode = "ranked_1v1";
   const ids = Array.from({ length: 30 }, () => randomUUID());

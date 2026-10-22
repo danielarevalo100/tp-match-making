@@ -6,9 +6,10 @@ import type {
 } from "../models/sanction.js";
 
 /**
- * Season standings a match changed. Same season rule as problem 4: the season that contains
- * `createdAt`, and only for a ranked mode. MMR carries over between seasons, so every later season
- * the player has a standing in also includes the match's delta and must be shifted as well.
+ * Standings de temporada que cambió una partida. Misma regla de temporada que el problema 4: la
+ * temporada que contiene `createdAt`, y solo para un modo rankeado. El MMR se arrastra entre
+ * temporadas, así que cada temporada posterior en la que el jugador tenga standing también
+ * incluye el delta de la partida y hay que corregirla.
  */
 export function affectedSeasons(
   catalog: SeasonCatalog,
@@ -28,9 +29,9 @@ export function affectedSeasons(
 }
 
 /**
- * Boards a reversal must hold: for every affected season and mode, all the participants of the
- * voided matches (the cheater and its rivals). Sorted, so the same sanction always produces the
- * same boards.
+ * Tableros que tiene que retener una reversión: por cada temporada y modo afectados, todos los
+ * participantes de las partidas anuladas (el tramposo y sus rivales). Ordenados, así la misma
+ * sanción siempre produce los mismos tableros.
  */
 export function heldBoards(
   matches: readonly ReversibleMatch[],

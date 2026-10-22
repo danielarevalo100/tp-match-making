@@ -101,14 +101,14 @@ export class MongoMatchClosureAdapter
   }
 
   find(matchId: string): Promise<MatchClosureRecord | null> {
-    return this.run("matchClosure.findMatch", async () => {
+    return this.read(async () => {
       const match = await this.matches.findOne({ _id: matchId });
       return match ? toRecord(match) : null;
     });
   }
 
   prepare(input: FinishMatchInput): Promise<MatchClosureRecord | null> {
-    return this.run("matchClosure.prepareMongo", async () => {
+    return this.write(async () => {
       const match = await this.matches.findOneAndUpdate(
         { _id: input.matchId, status: "in_progress" },
         {
@@ -132,7 +132,7 @@ export class MongoMatchClosureAdapter
   }
 
   rollbackPreparation(matchId: string, closureId: string): Promise<void> {
-    return this.run("matchClosure.rollbackMongo", async () => {
+    return this.write(async () => {
       await this.matches.updateOne(
         { _id: matchId, "closure.id": closureId, status: "closing" },
         {
@@ -144,7 +144,7 @@ export class MongoMatchClosureAdapter
   }
 
   markClosedPending(matchId: string, closureId: string, closedAt: Date): Promise<void> {
-    return this.run("matchClosure.markClosed", async () => {
+    return this.write(async () => {
       const result = await this.matches.updateOne(
         { _id: matchId, "closure.id": closureId, status: "closing" },
         {
@@ -165,7 +165,7 @@ export class MongoMatchClosureAdapter
   }
 
   beginScoring(matchId: string, closureId: string, at: Date): Promise<ScoringStatus> {
-    return this.run("matchClosure.beginScoring", async () => {
+    return this.write(async () => {
       const match = await this.matches.findOneAndUpdate(
         {
           _id: matchId,
@@ -195,7 +195,7 @@ export class MongoMatchClosureAdapter
     scores: readonly PlayerFinalScore[],
     at: Date,
   ): Promise<void> {
-    return this.run("matchClosure.completeScoring", async () => {
+    return this.write(async () => {
       const result = await this.matches.updateOne(
         { _id: matchId, "closure.id": closureId, status: "closed" },
         {
@@ -214,7 +214,7 @@ export class MongoMatchClosureAdapter
   }
 
   failScoring(matchId: string, closureId: string, message: string, at: Date): Promise<void> {
-    return this.run("matchClosure.failScoring", async () => {
+    return this.write(async () => {
       await this.matches.updateOne(
         {
           _id: matchId,
@@ -234,7 +234,7 @@ export class MongoMatchClosureAdapter
   }
 
   findLeaderboardSeason(mode: string, playedAt: Date): Promise<string | null> {
-    return this.run("matchClosure.findLeaderboardSeason", async () => {
+    return this.read(async () => {
       const [gameMode, season] = await Promise.all([
         this.gameModes.findOne({ _id: mode }, { projection: { ranked: 1 } }),
         this.seasons.findOne(
@@ -247,7 +247,7 @@ export class MongoMatchClosureAdapter
   }
 
   applyRating(input: ApplyRatingInput): Promise<void> {
-    return this.run("matchClosure.applyRating", async () => {
+    return this.write(async () => {
       const rating = `ratings.${input.mode}`;
       const update: Document[] = [
         {
@@ -268,8 +268,8 @@ export class MongoMatchClosureAdapter
         },
       ];
       if (input.seasonId) {
-        // Second stage: it reads the mode rating the first stage just wrote, so the standing
-        // copies the absolute value in the same atomic document update.
+        // Segunda etapa: lee el rating del modo que acaba de escribir la primera, así el standing
+        // copia el valor absoluto en la misma actualización atómica del documento.
         const standing = `seasonRatings.${input.seasonId}.${input.mode}`;
         update.push({
           $set: {
@@ -303,7 +303,7 @@ export class MongoMatchClosureAdapter
     mode: string,
     seasonId: string,
   ): Promise<LeaderboardStanding[]> {
-    return this.run("matchClosure.findStandings", async () => {
+    return this.read(async () => {
       const players = await this.players
         .find(
           { _id: { $in: [...playerIds] } },
@@ -332,7 +332,7 @@ export class MongoMatchClosureAdapter
     status: "published" | "not_ranked",
     at: Date,
   ): Promise<void> {
-    return this.run("matchClosure.markLeaderboard", async () => {
+    return this.write(async () => {
       await this.matches.updateOne(
         { _id: matchId, "closure.id": closureId, scoringStatus: "applied" },
         { $set: { leaderboard: { status, updatedAt: at } } },

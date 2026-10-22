@@ -9,9 +9,9 @@ import type {
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 /**
- * Turns the pairs found in the graph into groups: for each pair the winner of most of their
- * matches is the beneficiary, and a beneficiary keeps the opponents it beats at least
- * `minBenefitRatio` of the time. A pair with the same number of wins each has no beneficiary.
+ * Convierte los pares encontrados en el grafo en grupos: en cada par, el que ganó la mayoría de
+ * las partidas es el beneficiado, y se queda con los rivales a los que les gana al menos
+ * `minBenefitRatio` de las veces. Un par con las mismas victorias cada uno no tiene beneficiado.
  */
 export function buildMatchFixingGroups(
   pairs: readonly OpposingPair[],
@@ -50,9 +50,9 @@ export function buildMatchFixingGroups(
 }
 
 /**
- * For each reported player, finds the busiest window of `windowMs`: the one with the most
- * different reporters. The player is flagged when that number reaches `minReporters`; many
- * reports from a single reporter, or reports spread over a long time, do not count.
+ * Para cada jugador reportado busca la ventana de `windowMs` con más autores distintos. El
+ * jugador queda marcado cuando ese número llega a `minReporters`; muchos reportes de un solo
+ * autor, o reportes repartidos en mucho tiempo, no cuentan.
  */
 export function findReportBursts(
   reported: readonly ReportedPlayerReports[],

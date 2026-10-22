@@ -1,20 +1,18 @@
-// This script runs only when MongoDB initializes a new data volume.
-// Keep operations idempotent so the same statements can later be reused by a
-// dedicated schema command (scripts/initialize-infrastructure.*).
+// Este script corre solo cuando MongoDB inicializa un volumen de datos nuevo. Las operaciones son
+// idempotentes, así las mismas sentencias se pueden reaplicar con el comando de esquema
+// (scripts/initialize-infrastructure.*).
 //
-// MongoDB is the source of truth for durable domain data: players (with their
-// rating per game mode), static catalogs (regions, game modes, seasons),
-// administrators, reports and sanctions. Live state (matchmaking queues,
-// matches in progress, leaderboards) lives in Redis; match history and events
-// live in Cassandra. See infra/mongo/README.md.
+// MongoDB es la fuente de verdad de los datos durables del dominio: jugadores (con su rating por
+// modo de juego), catálogos estáticos (regiones, modos de juego, temporadas), administradores,
+// reportes y sanciones. El estado en vivo (colas de matchmaking, partidas en curso, leaderboards)
+// vive en Redis; el historial y los eventos de partidas, en Cassandra. Ver infra/mongo/README.md.
 
 const gamingDb = db.getSiblingDB("gaming");
 
 const NUMBER = ["int", "long", "double", "decimal"];
 const INTEGER = ["int", "long"];
 
-// Creates the collection with its validator, or updates the validator if the
-// collection already exists.
+// Crea la colección con su validador, o actualiza el validador si la colección ya existe.
 function ensureCollection(name, schema) {
   const options = {
     validator: { $jsonSchema: schema },
@@ -29,8 +27,8 @@ function ensureCollection(name, schema) {
   }
 }
 
-// Upserts static catalog documents so that reapplying the script also
-// propagates changes made to the definitions below.
+// Inserta o actualiza los documentos de catálogo, así reaplicar el script también propaga los
+// cambios hechos a las definiciones de abajo.
 function upsertCatalog(collection, documents) {
   for (const { _id, ...fields } of documents) {
     gamingDb[collection].updateOne({ _id }, { $set: fields }, { upsert: true });
@@ -48,9 +46,9 @@ if (!gamingDb.getCollectionNames().includes("schema_metadata")) {
 gamingDb.schema_metadata.createIndex({ version: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
-// regions (static catalog)
-// A player's region is derived from their country, so each country belongs to
-// exactly one region (unique multikey index on `countries`).
+// regions (catálogo estático)
+// La región de un jugador sale de su país, así que cada país pertenece a exactamente una región
+// (índice multikey único sobre `countries`).
 // ---------------------------------------------------------------------------
 
 ensureCollection("regions", {
@@ -110,11 +108,10 @@ upsertCatalog("regions", [
 ]);
 
 // ---------------------------------------------------------------------------
-// game_modes (static catalog)
-// minPlayers/maxPlayers define how many participations a match has. The
-// matchmaking block parametrizes match formation (problem 2): the accepted
-// rating range starts at initialRatingRange and grows by ratingRangeStep every
-// expandEverySeconds of waiting, up to maxRatingRange.
+// game_modes (catálogo estático)
+// minPlayers/maxPlayers definen cuántos participantes tiene una partida. El bloque matchmaking
+// parametriza la formación de partidas (problema 2): el rango de rating aceptado empieza en
+// initialRatingRange y crece ratingRangeStep cada expandEverySeconds de espera, hasta maxRatingRange.
 // ---------------------------------------------------------------------------
 
 ensureCollection("game_modes", {
@@ -233,8 +230,8 @@ upsertCatalog("game_modes", [
 ]);
 
 // ---------------------------------------------------------------------------
-// seasons (static catalog)
-// At most one season can be active at a time (partial unique index).
+// seasons (catálogo estático)
+// Puede haber a lo sumo una temporada activa a la vez (índice único parcial).
 // ---------------------------------------------------------------------------
 
 ensureCollection("seasons", {
@@ -280,14 +277,12 @@ upsertCatalog("seasons", [
 
 // ---------------------------------------------------------------------------
 // players
-// `_id` is the shared identifier used by every engine (Redis keys, Cassandra
-// partitions, Neo4j nodes). `region` is derived from `country` at
-// registration. `ratings` holds the current rating per game mode, keyed by
-// game_modes._id (e.g. ratings.ranked_5v5.mmr); historical snapshots
-// (mmr_before / mmr_after) live with the match history, not here.
-// `accountStatus` only describes the account lifecycle: sanctions are kept in
-// their own collection and are the only source for "is this player
-// sanctioned?".
+// `_id` es el identificador compartido que usan todas las bases (claves de Redis, particiones de
+// Cassandra, nodos de Neo4j). `region` se calcula desde `country` al registrarse. `ratings` tiene
+// el rating actual por modo de juego, con clave game_modes._id (por ejemplo ratings.ranked_5v5.mmr);
+// las fotos históricas (mmr_before / mmr_after) viven con el historial de partidas, no acá.
+// `accountStatus` solo describe el ciclo de vida de la cuenta: las sanciones están en su propia
+// colección y son la única fuente para saber si un jugador está sancionado.
 // ---------------------------------------------------------------------------
 
 ensureCollection("players", {
@@ -348,8 +343,8 @@ ensureCollection("players", {
       uniqueItems: true,
       items: { bsonType: "string" },
     },
-    // Problem 8: voided matches whose rating adjustment was already taken back. Same role as
-    // appliedRatingMatches: the guard that makes the reversal idempotent per (match, player).
+    // Problema 8: partidas anuladas cuyo ajuste de rating ya se deshizo. Mismo rol que
+    // appliedRatingMatches: la guarda que hace idempotente la reversión por (partida, jugador).
     revertedRatingMatches: {
       bsonType: "array",
       description:
@@ -357,12 +352,12 @@ ensureCollection("players", {
       uniqueItems: true,
       items: { bsonType: "string" },
     },
-    // Leaderboard standing per season and mode (problem 5), written by problem 4 in the same
-    // update as `ratings`: seasonRatings.<seasonId>.<modeId>. `mmr` is the mode rating after the
-    // player's last match of that season, `region` the player's region at that moment and
-    // `revision` grows on every change so Redis can ignore stale writes. `gamesPlayed` can drop
-    // to 0 when problem 8 voids every match the player had in the season: the standing is kept
-    // (so `revision` keeps growing) but it is no longer ranked.
+    // Standing del leaderboard por temporada y modo (problema 5), lo escribe el problema 4 en el
+    // mismo update que `ratings`: seasonRatings.<seasonId>.<modeId>. `mmr` es el rating del modo
+    // después de la última partida del jugador en esa temporada, `region` la región del jugador en
+    // ese momento y `revision` crece en cada cambio para que Redis ignore escrituras viejas.
+    // `gamesPlayed` puede bajar a 0 cuando el problema 8 anula todas las partidas del jugador en la
+    // temporada: el standing se conserva (así `revision` sigue creciendo) pero ya no se rankea.
     seasonRatings: {
       bsonType: "object",
       description: "Leaderboard standing per season, then per game mode",
@@ -390,9 +385,9 @@ gamingDb.players.createIndex({ email: 1 }, { unique: true });
 gamingDb.players.createIndex({ region: 1, registeredAt: 1 });
 gamingDb.players.createIndex({ country: 1 });
 
-// Version 3 migration: normalize existing identifiers and backfill updatedAt.
-// A case-insensitive collision intentionally fails against the unique indexes
-// and must be resolved explicitly instead of silently merging accounts.
+// Migración de la versión 3: normaliza los identificadores existentes y completa updatedAt.
+// Una colisión sin distinguir mayúsculas falla a propósito contra los índices únicos y hay que
+// resolverla a mano, en lugar de fusionar cuentas en silencio.
 gamingDb.players.updateMany({}, [
   {
     $set: {
@@ -433,8 +428,8 @@ gamingDb.administrators.createIndex({ email: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
 // reports
-// reporterPlayerId is null for automatic reports. assignedAdminId stays null
-// until an administrator takes the report.
+// reporterPlayerId es null en los reportes automáticos. assignedAdminId queda null hasta que un
+// administrador toma el reporte.
 // ---------------------------------------------------------------------------
 
 ensureCollection("reports", {
@@ -476,14 +471,14 @@ ensureCollection("reports", {
 gamingDb.reports.createIndex({ reportedPlayerId: 1, createdAt: -1 });
 gamingDb.reports.createIndex({ status: 1, createdAt: 1 });
 gamingDb.reports.createIndex({ matchId: 1 }, { sparse: true });
-// Problem 7: reports received by any player inside a time window.
+// Problema 7: reportes recibidos por cualquier jugador dentro de una ventana de tiempo.
 gamingDb.reports.createIndex({ createdAt: 1 });
 
 // ---------------------------------------------------------------------------
 // sanctions
-// A sanction is in force when status = "active", startsAt <= now and
-// (endsAt is null or endsAt > now). endsAt = null means permanent.
-// All sanction types block matchmaking (problem 1).
+// Una sanción está en vigor cuando status = "active", startsAt <= ahora y (endsAt es null o
+// endsAt > ahora). endsAt = null significa permanente. Todos los tipos de sanción bloquean el
+// matchmaking (problema 1).
 // ---------------------------------------------------------------------------
 
 ensureCollection("sanctions", {
@@ -518,9 +513,9 @@ ensureCollection("sanctions", {
     endsAt: { bsonType: ["date", "null"], description: "null = permanent" },
     status: { enum: ["active", "expired", "revoked"] },
     createdAt: { bsonType: "date" },
-    // Problem 8: matches whose results the sanction voids, and the journal of that reversal.
-    // The sanction is in force as soon as it is inserted; the reversal only moves forward and
-    // records each finished step, so after a crash it is clear what is left to complete.
+    // Problema 8: partidas cuyos resultados anula la sanción, y el journal de esa reversión. La
+    // sanción está en vigor apenas se inserta; la reversión solo avanza y anota cada paso
+    // terminado, así después de una caída queda claro qué falta completar.
     matchIds: {
       bsonType: "array",
       uniqueItems: true,
@@ -573,17 +568,17 @@ ensureCollection("sanctions", {
   },
 });
 
-// Supports the "sanction in force" check used by problem 1.
+// Resuelve el chequeo de "sanción en vigor" que usa el problema 1.
 gamingDb.sanctions.createIndex({ playerId: 1, status: 1, endsAt: 1 });
 gamingDb.sanctions.createIndex({ playerId: 1, createdAt: -1 });
 gamingDb.sanctions.createIndex({ reportId: 1 }, { sparse: true });
 
 // ---------------------------------------------------------------------------
-// matches (problem 2)
-// Durable record of a match created by the formation saga. `_id` is the shared
-// matchId (also the Redis key suffix and the Cassandra partition later), so
-// retrying the creation never duplicates it. Problem 4 closes it. Problem 8
-// moves it from closed to voided and records `voided: { sanctionId, at }`.
+// matches (problema 2)
+// Registro durable de una partida creada por la saga de formación. `_id` es el matchId compartido
+// (también el sufijo de la clave en Redis y después la partición en Cassandra), así reintentar la
+// creación nunca la duplica. El problema 4 la cierra. El problema 8 la pasa de closed a voided y
+// guarda `voided: { sanctionId, at }`.
 // ---------------------------------------------------------------------------
 
 ensureCollection("matches", {
@@ -625,7 +620,7 @@ gamingDb.matches.createIndex({ status: 1, createdAt: 1 });
 gamingDb.matches.createIndex({ "players.playerId": 1, createdAt: -1 });
 
 // ---------------------------------------------------------------------------
-// Schema versions
+// Versiones del esquema
 // ---------------------------------------------------------------------------
 
 gamingDb.schema_metadata.updateOne(

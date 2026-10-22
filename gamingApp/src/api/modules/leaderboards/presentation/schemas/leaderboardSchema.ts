@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Mode, season and region become part of Redis keys and MongoDB field paths, so only catalog-like
-// identifiers are accepted.
+// Modo, temporada y región terminan en claves de Redis y rutas de campos de MongoDB, así que solo
+// se aceptan identificadores con forma de catálogo.
 const modeSchema = z.string().regex(/^[a-z0-9_]{1,64}$/);
 const seasonIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,32}$/);
 

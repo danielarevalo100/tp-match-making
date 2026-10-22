@@ -10,7 +10,7 @@ import type { MatchGraphPort } from "../../business/ports/fraudPorts.js";
 
 const writeBatchSize = 250;
 
-// MERGE by id makes the load idempotent: the same match again changes nothing.
+// MERGE por id hace la carga idempotente: cargar otra vez la misma partida no cambia nada.
 const upsertMatches = `
 UNWIND $matches AS row
 MERGE (match:Match {id: row.matchId})
@@ -22,7 +22,7 @@ MERGE (player)-[played:PLAYED]->(match)
   SET played.result = entry.result, played.ratingDelta = toInteger(entry.ratingDelta)
 `;
 
-// Players on opposite sides of a decided match; "a.id < b.id" visits each pair only once.
+// Jugadores de lados opuestos de una partida decidida; "a.id < b.id" recorre cada par una sola vez.
 const findOpposingPairs = `
 MATCH (a:Player)-[ra:PLAYED]->(match:Match)<-[rb:PLAYED]-(b:Player)
 WHERE a.id < b.id
@@ -39,7 +39,7 @@ LIMIT $limit
 export class Neo4jMatchGraphAdapter extends BaseNeo4jAdapter implements MatchGraphPort {
   async upsertMatches(matches: readonly ClosedMatch[]): Promise<void> {
     for (let start = 0; start < matches.length; start += writeBatchSize) {
-      await this.query("fraud.upsertMatches", "write", upsertMatches, {
+      await this.query("write", upsertMatches, {
         matches: matches.slice(start, start + writeBatchSize).map((match) => ({
           endedAtMs: match.endedAt.getTime(),
           matchId: match.id,
@@ -61,7 +61,7 @@ export class Neo4jMatchGraphAdapter extends BaseNeo4jAdapter implements MatchGra
     mode?: string;
     since: Date;
   }): Promise<OpposingPair[]> {
-    const records = await this.query("fraud.findOpposingPairs", "read", findOpposingPairs, {
+    const records = await this.query("read", findOpposingPairs, {
       limit: neo4j.int(query.limit),
       minMatches: neo4j.int(query.minMatches),
       mode: query.mode ?? null,

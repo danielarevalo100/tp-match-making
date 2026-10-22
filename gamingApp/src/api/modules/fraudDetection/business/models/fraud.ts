@@ -1,4 +1,4 @@
-/** Two players that faced each other (one won, the other lost) in `matches` matches. */
+/** Dos jugadores que se enfrentaron (uno ganó y el otro perdió) en `matches` partidas. */
 export type OpposingPair = {
   matches: number;
   playerA: string;
@@ -8,11 +8,11 @@ export type OpposingPair = {
 };
 
 export type MatchFixingCriteria = {
-  /** Maximum number of groups returned. */
+  /** Cantidad máxima de grupos devueltos. */
   limit: number;
-  /** Share of their matches against each other that the beneficiary has to win. */
+  /** Proporción de sus partidas entre sí que tiene que ganar el beneficiado. */
   minBenefitRatio: number;
-  /** Minimum number of decided matches the two players played against each other. */
+  /** Mínimo de partidas decididas que los dos jugaron entre sí. */
   minMatches: number;
   mode?: string;
   since: Date;
@@ -27,7 +27,7 @@ export type FixingPartner = {
   username: string | null;
 };
 
-/** One player who keeps beating the same opponents, with those opponents. */
+/** Un jugador que le gana siempre a los mismos rivales, con esos rivales. */
 export type MatchFixingGroup = {
   beneficiary: { playerId: string; username: string | null };
   partners: readonly FixingPartner[];
@@ -45,7 +45,7 @@ export type ReportRecord = {
   reporterPlayerId: string;
 };
 
-/** Every report with a human reporter received by one player. */
+/** Todos los reportes con un jugador como autor que recibió un jugador. */
 export type ReportedPlayerReports = {
   reportedPlayerId: string;
   reports: readonly ReportRecord[];
@@ -75,6 +75,6 @@ export type CrossReportResult = {
 export type IrregularBehaviorResult = {
   crossReports: CrossReportResult;
   matchFixing: MatchFixingResult;
-  /** Players that appear in a match-fixing group and also have converging reports. */
+  /** Jugadores que están en un grupo de arreglo de partidas y además tienen reportes coincidentes. */
   playersInBoth: readonly string[];
 };

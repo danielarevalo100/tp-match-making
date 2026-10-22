@@ -38,7 +38,7 @@ function toStanding(
   mode: string,
 ): LeaderboardStanding | null {
   const standing = player.seasonRatings?.[seasonId]?.[mode];
-  // A standing with no games left (problem 8 voided every match of the season) is not ranked.
+  // Un standing sin partidas (el problema 8 anuló todas las de la temporada) no se rankea.
   if (!standing || standing.gamesPlayed < 1) return null;
   return {
     mmr: standing.mmr,
@@ -63,21 +63,21 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
   }
 
   findSeason(seasonId: string): Promise<SeasonInfo | null> {
-    return this.run("leaderboard.findSeason", async () => {
+    return this.read(async () => {
       const season = await this.seasons.findOne({ _id: seasonId }, { projection: { status: 1 } });
       return season ? { id: season._id, status: season.status } : null;
     });
   }
 
   findMode(mode: string): Promise<GameModeInfo | null> {
-    return this.run("leaderboard.findMode", async () => {
+    return this.read(async () => {
       const gameMode = await this.gameModes.findOne({ _id: mode }, { projection: { ranked: 1 } });
       return gameMode ? { id: gameMode._id, ranked: gameMode.ranked } : null;
     });
   }
 
   regionExists(region: string): Promise<boolean> {
-    return this.run("leaderboard.findRegion", async () => {
+    return this.read(async () => {
       return (await this.regions.countDocuments({ _id: region }, { limit: 1 })) > 0;
     });
   }
@@ -87,7 +87,7 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
     seasonId: string,
     mode: string,
   ): Promise<ReadonlyMap<string, PlayerSummary>> {
-    return this.run("leaderboard.findPlayers", async () => {
+    return this.read(async () => {
       if (playerIds.length === 0) return new Map();
       const players = await this.players
         .find(
@@ -117,7 +117,7 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
     seasonId: string,
     mode: string,
   ): Promise<LeaderboardStanding[]> {
-    return this.run("leaderboard.findStandings", async () => {
+    return this.read(async () => {
       if (playerIds.length === 0) return [];
       const players = await this.players
         .find(
@@ -141,7 +141,7 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
     );
     try {
       for (;;) {
-        const batch = await this.run("leaderboard.listStandings", async () => {
+        const batch = await this.read(async () => {
           const standings: LeaderboardStanding[] = [];
           while (standings.length < batchSize) {
             const player = await cursor.next();

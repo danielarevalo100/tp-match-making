@@ -11,9 +11,9 @@ export const scoringStatuses = [
 export type ScoringStatus = (typeof scoringStatuses)[number];
 
 /**
- * Publication of the match's rating changes to the season leaderboard (problem 5). It only
- * starts once scoring is `applied`, so a leaderboard never shows a rating that MongoDB or the
- * final scoreboard do not have yet.
+ * Publicación de los cambios de rating de la partida en el leaderboard de la temporada (problema
+ * 5). Solo empieza cuando el scoring está `applied`, así un leaderboard nunca muestra un rating
+ * que MongoDB o el marcador final todavía no tienen.
  */
 export const leaderboardStatuses = ["pending", "published", "not_ranked"] as const;
 export type LeaderboardStatus = (typeof leaderboardStatuses)[number];
@@ -37,7 +37,7 @@ export type MatchParticipant = {
 
 export type MatchClosureRecord = {
   closureId: string | null;
-  /** When problem 2 formed the match; decides the season the match counts for. */
+  /** Cuándo la formó el problema 2; decide la temporada para la que cuenta. */
   createdAt: Date;
   eventId: string | null;
   id: string;
@@ -101,21 +101,21 @@ export type ScoringEventPage = {
 export type ApplyRatingInput = {
   at: Date;
   delta: number;
-  /** Rating to start from when the player has none for the mode yet (the match snapshot). */
+  /** Rating desde el que se parte si el jugador todavía no tiene uno en el modo (el de la partida). */
   fallbackMmr: number;
   matchId: string;
   mode: string;
   playerId: string;
-  /** Season whose leaderboard standing is updated too, or null when the match is not ranked. */
+  /** Temporada cuyo standing también se actualiza, o null si la partida no es rankeada. */
   seasonId: string | null;
 };
 
-/** A player's place in a season leaderboard, as stored in MongoDB. */
+/** El lugar de un jugador en el leaderboard de una temporada, tal como lo guarda MongoDB. */
 export type LeaderboardStanding = {
   mmr: number;
   playerId: string;
   region: string;
-  /** Grows on every change, so an older standing never overwrites a newer one. */
+  /** Crece en cada cambio, así un standing viejo nunca pisa uno más nuevo. */
   revision: number;
 };
 

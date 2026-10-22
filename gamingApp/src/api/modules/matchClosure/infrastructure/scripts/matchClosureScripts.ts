@@ -22,8 +22,8 @@ redis.call('HDEL', KEYS[1], 'closureId')
 return 1
 `;
 
-// KEYS: live match, scoreboard, applied ids, release marker, N active_match keys.
-// ARGV: closureId, matchId, releasedAt, markerTtlSeconds, N player ids.
+// KEYS: partida en vivo, marcador, ids aplicados, marca de liberación, N claves active_match.
+// ARGV: closureId, matchId, releasedAt, markerTtlSeconds, N ids de jugadores.
 export const releaseMatchScript = `
 if redis.call('HGET', KEYS[4], 'closureId') == ARGV[1]
   and redis.call('HGET', KEYS[4], 'status') == 'released' then

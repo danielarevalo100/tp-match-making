@@ -28,14 +28,14 @@ export class MongoCatalogAdapter extends BaseMongoAdapter implements CatalogRepo
   }
 
   findActiveRegionByCountry(country: string): Promise<string | null> {
-    return this.run("players.findActiveRegionByCountry", async () => {
+    return this.read(async () => {
       const region = await this.regions.findOne({ active: true, countries: country });
       return region?._id ?? null;
     });
   }
 
   listActiveGameModes(): Promise<readonly GameMode[]> {
-    return this.run("players.listActiveGameModes", async () => {
+    return this.read(async () => {
       const modes = await this.gameModes.find({ active: true }).sort({ _id: 1 }).toArray();
       return modes.map((mode) => ({
         id: mode._id,

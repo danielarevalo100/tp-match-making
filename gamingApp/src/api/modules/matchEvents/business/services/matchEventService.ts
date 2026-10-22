@@ -26,12 +26,12 @@ export type RecordEventInput = {
 };
 
 /**
- * In-match events (problem 3). One event is written to two engines, in this order:
- *   1. Cassandra  append  - durable log; keyed by (matchId, tsMs, eventId), so retries overwrite
- *   2. Redis      apply   - live scoreboard; one Lua script that skips an eventId already applied
- * The log goes first: if the scoreboard step fails the event is already safe and the scoreboard
- * can be repaired by retrying the same event or by `reconcile`. The other way round, the
- * scoreboard could show points that no event in the log explains.
+ * Eventos dentro de la partida (problema 3). Un evento se escribe en dos bases, en este orden:
+ *   1. Cassandra  append  - log durable; clave (matchId, tsMs, eventId), un reintento pisa la misma fila
+ *   2. Redis      apply   - marcador en vivo; un script Lua que saltea un eventId ya aplicado
+ * El log va primero: si falla el marcador, el evento ya está a salvo y el marcador se repara
+ * reintentando el mismo evento o con `reconcile`. Al revés, el marcador podría mostrar puntos que
+ * ningún evento del log explica.
  */
 export class MatchEventService {
   constructor(
@@ -61,7 +61,7 @@ export class MatchEventService {
 
     await this.log.append(event);
     const outcome = await this.scoreboard.apply(event);
-    // The match closed between the check and the script: the event is in the log but not scored.
+    // La partida se cerró entre el chequeo y el script: el evento está en el log pero no puntúa.
     if (outcome === "not_live") throw new MatchNotLiveError(input.matchId);
     return { eventId: event.eventId, status: outcome === "applied" ? "recorded" : "duplicate" };
   }
@@ -77,9 +77,9 @@ export class MatchEventService {
   }
 
   /**
-   * Re-applies every event of the log to the live scoreboard. Events already applied are skipped,
-   * so it is safe to run while events keep arriving; it fills the gaps left by a failed step 2
-   * (or by losing Redis, in which case it rebuilds the whole scoreboard).
+   * Vuelve a aplicar todos los eventos del log al marcador en vivo. Los ya aplicados se saltean,
+   * así que se puede correr mientras siguen llegando eventos; completa lo que dejó un paso 2
+   * fallido (o la pérdida de Redis, en cuyo caso reconstruye todo el marcador).
    */
   async reconcile(matchId: string): Promise<ReconcileResult> {
     if ((await this.scoreboard.findLiveMatch(matchId))?.status !== "in_progress") {

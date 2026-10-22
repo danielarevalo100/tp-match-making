@@ -27,10 +27,10 @@ export function toHistoryRows(match: ClosedMatch): HistoryRow[] {
 }
 
 /**
- * Moves closed matches into the player history. MongoDB keeps the closed match (problem 4); the
- * history rows are written once per player to Cassandra. Safe to run again: a row is identified
- * by (playerId, endedAt, matchId), so repeating a page overwrites the same rows. `nextCursor`
- * is the checkpoint to resume from.
+ * Pasa las partidas cerradas al historial de jugadores. MongoDB guarda la partida cerrada
+ * (problema 4); las filas del historial se escriben una por jugador en Cassandra. Se puede correr
+ * otra vez: una fila se identifica por (playerId, endedAt, matchId), así repetir una página pisa
+ * las mismas filas. `nextCursor` es el punto desde donde reanudar.
  */
 export class PlayerHistoryProjectionService {
   constructor(

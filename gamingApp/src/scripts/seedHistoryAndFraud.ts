@@ -1,15 +1,15 @@
 /**
- * Test data for problems 6 and 7 (player history and irregular behavior).
+ * Datos de prueba para los problemas 6 y 7 (historial del jugador y comportamiento irregular).
  *
  *   pnpm seed:history
  *
- * MongoDB is the source of truth: it gets players, closed matches (with the final scoreboard that
- * problem 4 would have written) and reports. Then the same projection services the API exposes
- * (POST /history/projection and POST /fraud/projection) load Cassandra and Neo4j from it.
- * Everything has a deterministic id, so running it again does not duplicate anything.
+ * MongoDB es la fuente de verdad: recibe jugadores, partidas cerradas (con el marcador final que
+ * habría escrito el problema 4) y reportes. Después, los mismos servicios de proyección que expone
+ * la API (POST /history/projection y POST /fraud/projection) cargan Cassandra y Neo4j desde ahí.
+ * Todo tiene un id determinístico, así correrlo de nuevo no duplica nada.
  *
- * Environment: SEED_PLAYERS (2000), SEED_MATCHES (50000), SEED_REPORTS (300), SEED_NOW (ISO date).
- * Needs the same variables as the application (see .env.example) and the schema applied.
+ * Entorno: SEED_PLAYERS (2000), SEED_MATCHES (50000), SEED_REPORTS (300), SEED_NOW (fecha ISO).
+ * Necesita las mismas variables que la aplicación (ver .env.example) y el esquema aplicado.
  */
 import { createHash } from "node:crypto";
 
@@ -44,7 +44,7 @@ const countries = [
 ] as const;
 const reportReasons = ["cheating", "match_fixing", "toxicity", "griefing", "afk"] as const;
 
-// mulberry32: small seeded generator, so the same seed gives the same data.
+// mulberry32: generador chico con semilla, así la misma semilla da los mismos datos.
 function createRandom(seed: number): () => number {
   let state = seed;
   return () => {
@@ -55,7 +55,7 @@ function createRandom(seed: number): () => number {
   };
 }
 
-/** Stable UUID for (kind, index): the same entity always gets the same id. */
+/** UUID estable para (tipo, índice): la misma entidad siempre recibe el mismo id. */
 function id(kind: string, index: number): string {
   const bytes = createHash("sha1")
     .update(`gaming-seed:${kind}:${String(index)}`)
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    // Fixtures: who plays whom and when. Planted scenarios have a fixed outcome.
+    // Cruces: quién juega contra quién y cuándo. Los escenarios plantados tienen resultado fijo.
     const fixtures: Fixture[] = [];
     const spread = (count: number, fromDaysAgo: number, toDaysAgo: number): number[] =>
       Array.from(
@@ -149,23 +149,23 @@ async function main(): Promise<void> {
         ...Array.from({ length: wins }, () => "a" as const),
         ...Array.from({ length: losses }, () => "b" as const),
       ];
-      // Interleave so the wins and losses are not in two blocks.
+      // Se intercalan para que victorias y derrotas no queden en dos bloques.
       outcomes.sort(() => random() - 0.5);
       spread(outcomes.length, from, to).forEach((at, index) =>
         fixtures.push({ a, at, b, outcome: outcomes[index] ?? "a" }),
       );
     };
-    // Match-fixing ring: player 0 always beats players 1, 2 and 3.
+    // Anillo de arreglo de partidas: el jugador 0 siempre le gana a los jugadores 1, 2 y 3.
     plant(0, 1, 8, 0, 14, 1);
     plant(0, 2, 7, 0, 14, 1);
     plant(0, 3, 6, 0, 14, 1);
-    // Decoys: a one-sided rivalry (7-3), and always winning but only 3 matches.
+    // Señuelos: una rivalidad desigual (7-3), y uno que siempre gana pero en solo 3 partidas.
     plant(10, 11, 7, 3, 20, 1);
     plant(12, 13, 3, 0, 10, 1);
-    // An old ring, outside the default 30-day window.
+    // Un anillo viejo, fuera de la ventana por defecto de 30 días.
     plant(20, 21, 6, 0, 50, 40);
     const planted = fixtures.length;
-    // Players 0-21 only meet each other in the planted scenarios above.
+    // Los jugadores 0-21 solo se cruzan entre sí en los escenarios plantados de arriba.
     const reservedPlayers = 22;
     for (let index = 0; index < Math.max(0, matchCount - planted); index++) {
       const a = between(0, playerCount - 1);
@@ -182,7 +182,7 @@ async function main(): Promise<void> {
     for (const fixture of fixtures) fixture.at = Math.round(fixture.at);
     fixtures.sort((left, right) => left.at - right.at);
 
-    // Simulate in order, so every player's mmrBefore/mmrAfter chain is consistent.
+    // Se simula en orden, así la cadena mmrBefore/mmrAfter de cada jugador es consistente.
     const ratings: Rating[] = Array.from({ length: playerCount }, () => ({ games: 0, mmr: 1_000 }));
     const regionOf = (index: number): string => countries[index % countries.length]?.[1] ?? "NA";
     const matches = fixtures.map((fixture, index) => {
@@ -267,7 +267,7 @@ async function main(): Promise<void> {
       };
     });
 
-    // Reports: planted scenarios plus random background noise.
+    // Reportes: escenarios plantados más ruido aleatorio de fondo.
     const reports: {
       _id: string;
       createdAt: Date;
@@ -290,15 +290,15 @@ async function main(): Promise<void> {
         status: "open",
       });
     };
-    // Converging reports on the ring leader: 5 different reporters in 25 minutes.
+    // Reportes coincidentes sobre el líder del anillo: 5 autores distintos en 25 minutos.
     [100, 101, 102, 103, 104].forEach((reporter, index) =>
       report(0, reporter, now - 2 * dayMs + index * 6 * minuteMs, "match_fixing"),
     );
-    // Another burst on a player that is not in any ring: 4 reporters in 40 minutes.
+    // Otra ráfaga sobre un jugador que no está en ningún anillo: 4 autores en 40 minutos.
     [110, 111, 112, 113].forEach((reporter, index) =>
       report(40, reporter, now - 5 * dayMs + index * 13 * minuteMs, "toxicity"),
     );
-    // Decoys: 5 reporters spread over 5 days, and one reporter filing 6 reports in 10 minutes.
+    // Señuelos: 5 autores repartidos en 5 días, y un solo autor con 6 reportes en 10 minutos.
     [120, 121, 122, 123, 124].forEach((reporter, index) =>
       report(30, reporter, now - (6 - index) * dayMs, "cheating"),
     );

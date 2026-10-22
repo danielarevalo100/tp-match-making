@@ -26,7 +26,7 @@ export interface MatchmakingQueuePort {
   findTicket(playerId: string): Promise<QueueTicket | null>;
   leave(playerId: string): Promise<boolean>;
 
-  // Match formation (problem 2).
+  // Formación de partidas (problema 2).
   findOldestTicket(mode: string, region: string): Promise<QueueTicket | null>;
   findTicketsInRatingRange(
     mode: string,
@@ -35,16 +35,16 @@ export interface MatchmakingQueuePort {
     maxMmr: number,
     limit: number,
   ): Promise<QueueTicket[]>;
-  /** Atomically moves the tickets out of the queue into a `reserved` formation. */
+  /** Mueve los tickets de la cola a una formación `reserved`, de forma atómica. */
   reserveFormation(matchId: string, tickets: readonly QueueTicket[]): Promise<ReserveOutcome>;
-  /** Last step: publishes the live match and closes the formation. Idempotent. */
+  /** Último paso: publica la partida en vivo y cierra la formación. Idempotente. */
   commitFormation(
     matchId: string,
     mode: string,
     region: string,
     playerIds: readonly string[],
   ): Promise<CommitOutcome>;
-  /** Compensation: puts the reserved tickets back with their original enqueuedAt. Idempotent. */
+  /** Compensación: devuelve los tickets reservados con su enqueuedAt original. Idempotente. */
   restoreFormation(matchId: string): Promise<RestoreOutcome>;
   findStaleFormations(olderThanMs: number): Promise<string[]>;
 }

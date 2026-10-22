@@ -3,7 +3,7 @@ import type {
   ScoringStatus,
 } from "../../../matchClosure/business/models/matchClosure.js";
 
-/** Same values as the `sanctions.type` validator; every type blocks matchmaking (problem 1). */
+/** Mismos valores que el validador de `sanctions.type`; todos bloquean el matchmaking (problema 1). */
 export const sanctionTypes = [
   "matchmaking_restriction",
   "temporary_suspension",
@@ -15,36 +15,36 @@ export const sanctionStatuses = ["active", "expired", "revoked"] as const;
 export type SanctionStatus = (typeof sanctionStatuses)[number];
 
 /**
- * Reversal of the results of the matches the player cheated in. The sanction is registered first
- * and stays in force whatever happens to the reversal, which only ever moves forward:
+ * Reversión de los resultados de las partidas en las que el jugador hizo trampa. La sanción se
+ * registra primero y queda en vigor pase lo que pase con la reversión, que solo avanza:
  *
  *   pending -> reverting -> completed
  *                  |
- *                  +-----> failed -> reverting (retry or resume)
+ *                  +-----> failed -> reverting (reintento o resume)
  */
 export const reversalStatuses = ["pending", "reverting", "completed", "failed"] as const;
 export type ReversalStatus = (typeof reversalStatuses)[number];
 
 /**
- * Steps of the reversal recorded in the journal, in order. Matches are recorded one by one in
- * `revertedMatchIds`, between `hold` and `leaderboard`.
+ * Pasos de la reversión que se anotan en el journal, en orden. Las partidas se anotan una por una
+ * en `revertedMatchIds`, entre `hold` y `leaderboard`.
  */
 export const reversalSteps = ["queue", "hold", "leaderboard"] as const;
 export type ReversalStep = (typeof reversalSteps)[number];
 
-/** A season and mode board and the players of the voided matches it has to hold. */
+/** Un tablero de temporada y modo, y los jugadores de las partidas anuladas que tiene que retener. */
 export type HeldBoard = {
   mode: string;
   playerIds: readonly string[];
   seasonId: string;
 };
 
-/** Durable checkpoint of the reversal, stored inside the sanction document. */
+/** Punto de control durable de la reversión, guardado dentro del documento de la sanción. */
 export type ReversalJournal = {
   attempts: number;
   completedAt: Date | null;
   completedSteps: readonly ReversalStep[];
-  /** Boards held in Redis; the release step releases exactly these. */
+  /** Tableros retenidos en Redis; el paso de release libera exactamente estos. */
   heldBoards: readonly HeldBoard[];
   lastError: string | null;
   revertedMatchIds: readonly string[];
@@ -56,10 +56,10 @@ export type SanctionRecord = {
   administratorId: string;
   createdAt: Date;
   description: string | null;
-  /** null = permanent. */
+  /** null = permanente. */
   endsAt: Date | null;
   id: string;
-  /** Matches whose results are voided, as the administrator listed them. */
+  /** Partidas cuyos resultados se anulan, tal como las listó el administrador. */
   matchIds: readonly string[];
   playerId: string;
   reason: string;
@@ -78,7 +78,7 @@ export type SanctionInput = {
   playerId: string;
   reason: string;
   reportId: string | null;
-  /** Idempotency key chosen by the caller: the same id retried resumes the same sanction. */
+  /** Clave de idempotencia elegida por quien llama: reintentar el mismo id continúa la misma sanción. */
   sanctionId: string;
   startsAt: Date | null;
   type: SanctionType;
@@ -87,21 +87,21 @@ export type SanctionInput = {
 export type AdministratorInfo = { active: boolean; id: string };
 export type ReportInfo = { id: string; matchId: string | null; reportedPlayerId: string };
 
-/** A participant's rating change that problem 4 applied and problem 8 takes back. */
+/** El cambio de rating de un participante que aplicó el problema 4 y el problema 8 deshace. */
 export type ReversibleParticipant = {
   playerId: string;
   ratingDelta: number;
 };
 
-/** A match as problem 8 needs it: its final scoreboard and whether it is already voided. */
+/** Una partida tal como la necesita el problema 8: su marcador final y si ya está anulada. */
 export type ReversibleMatch = {
-  /** When problem 2 formed it; decides the season it counted for. */
+  /** Cuándo la formó el problema 2; decide la temporada para la que contó. */
   createdAt: Date;
-  /** `closure.tsMs`: the `ended_at` of its rows in the player history (problem 6). */
+  /** `closure.tsMs`: el `ended_at` de sus filas en el historial (problema 6). */
   endedAt: Date | null;
   id: string;
   mode: string;
-  /** From `finalScoreboard`; empty until problem 4 applied the scoring. */
+  /** De `finalScoreboard`; vacío hasta que el problema 4 aplica el scoring. */
   participants: readonly ReversibleParticipant[];
   scoringStatus: ScoringStatus;
   status: MatchLifecycleStatus;
@@ -115,26 +115,27 @@ export type CatalogSeason = {
   status: string;
 };
 
-/** What decides which season standings a match changed (MongoDB catalogs). */
+/** Lo que decide qué standings de temporada cambió una partida (catálogos de MongoDB). */
 export type SeasonCatalog = {
   rankedModes: readonly string[];
   seasons: readonly CatalogSeason[];
 };
 
 /**
- * Season standings a match changed. MMR does not reset between seasons, so a match shifts the
- * standing of its own season and of every later one the player has a standing in.
+ * Standings de temporada que cambió una partida. El MMR no se reinicia entre temporadas, así que
+ * una partida mueve el standing de su temporada y el de cada temporada posterior en la que el
+ * jugador tenga standing.
  */
 export type AffectedSeasons = {
-  /** Season that contains the match, whose `gamesPlayed` counted it. */
+  /** Temporada que contiene la partida, cuyo `gamesPlayed` la contó. */
   matchSeasonId: string | null;
-  /** That season and the later ones. Empty when the mode is not ranked. */
+  /** Esa temporada y las posteriores. Vacío si el modo no es rankeado. */
   seasonIds: readonly string[];
 };
 
 export type RatingReversal = {
   at: Date;
-  /** The delta problem 4 applied; it is subtracted. */
+  /** El delta que aplicó el problema 4; se resta. */
   delta: number;
   matchId: string;
   matchSeasonId: string | null;
@@ -143,7 +144,7 @@ export type RatingReversal = {
   seasonIds: readonly string[];
 };
 
-/** A season standing as MongoDB stores it, with the games that still count. */
+/** Un standing de temporada tal como lo guarda MongoDB, con las partidas que siguen contando. */
 export type SeasonStanding = {
   gamesPlayed: number;
   mmr: number;
@@ -152,7 +153,7 @@ export type SeasonStanding = {
   revision: number;
 };
 
-/** A held player and its current standing in the board, or null when it has none. */
+/** Un jugador retenido y su standing actual en el tablero, o null si no tiene. */
 export type HeldStanding = {
   playerId: string;
   standing: SeasonStanding | null;
@@ -185,7 +186,7 @@ export type SanctionView = {
 };
 
 export type SanctionOutcome = {
-  /** False when the request repeated a sanction that was already registered. */
+  /** False si el pedido repitió una sanción que ya estaba registrada. */
   created: boolean;
   sanction: SanctionView;
 };

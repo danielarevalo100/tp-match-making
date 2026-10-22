@@ -26,10 +26,10 @@ redis.call('ZADD', KEYS[4], ARGV[6], ARGV[1])
 return {'ENQUEUED'}
 `;
 
-// KEYS: ticket, rating queue, wait queue. ARGV: playerId, ticketId.
-// The queue keys depend on the ticket's mode and region, so the caller reads the
-// ticket first; the ticketId check makes the removal a no-op if the ticket was
-// replaced in between (the caller then retries with the fresh one).
+// KEYS: ticket, cola por rating, cola por espera. ARGV: playerId, ticketId.
+// Las claves de las colas dependen del modo y la región del ticket, así que quien llama lee el
+// ticket antes; el chequeo de ticketId hace que no se borre nada si el ticket fue reemplazado en
+// el medio (y entonces quien llama reintenta con el nuevo).
 export const leaveScript = `
 if redis.call('HGET', KEYS[1], 'ticketId') ~= ARGV[2] then
   return 0
@@ -41,14 +41,13 @@ return 1
 `;
 
 // ---------------------------------------------------------------------------
-// Match formation (problem 2)
+// Formación de partidas (problema 2)
 // ---------------------------------------------------------------------------
 
-// Step A of the formation saga. Atomic and all-or-nothing: either every ticket is
-// still queued and the whole group moves to a "reserved" formation, or nothing
-// is written and the missing players are reported.
-// KEYS: formation, formation index, rating queue, wait queue, n tickets, n active matches.
-// ARGV: matchId, now (ms), n, n playerIds, n ticketIds.
+// Paso A de la saga. Atómico y todo o nada: o todos los tickets siguen en la cola y el grupo
+// entero pasa a una formación "reserved", o no se escribe nada y se informan los que faltan.
+// KEYS: formación, índice de formaciones, cola por rating, cola por espera, n tickets, n partidas activas.
+// ARGV: matchId, ahora (ms), n, n playerIds, n ticketIds.
 export const reserveFormationScript = `
 if redis.call('EXISTS', KEYS[1]) == 1 then
   return {'EXISTS', redis.call('HGET', KEYS[1], 'status')}
@@ -90,9 +89,9 @@ redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
 return {'RESERVED'}
 `;
 
-// Last step of the saga: publishes the live match. Idempotent on "committed".
-// Refuses to commit if a reserved player left in the meantime.
-// KEYS: formation, formation index, live match. ARGV: matchId, mode, region, now (ms), players (csv).
+// Último paso de la saga: publica la partida en vivo. Idempotente si ya está "committed".
+// No hace el commit si un jugador reservado se fue mientras tanto.
+// KEYS: formación, índice de formaciones, partida en vivo. ARGV: matchId, mode, region, ahora (ms), jugadores (csv).
 export const commitFormationScript = `
 local status = redis.call('HGET', KEYS[1], 'status')
 if status == 'committed' then return {'COMMITTED'} end
@@ -115,11 +114,11 @@ redis.call('ZREM', KEYS[2], ARGV[1])
 return {'COMMITTED'}
 `;
 
-// Compensation: puts every reserved player (except those who left) back in the
-// queue with the original mmr and enqueuedAt, so they keep their seniority.
-// Idempotent: a second run finds "rolled_back" and does nothing.
-// KEYS: formation, formation index, rating queue, wait queue, live match,
-//       n tickets, n active matches (same order as the snapshot).
+// Compensación: devuelve a la cola a todos los jugadores reservados (salvo los que se fueron) con
+// su mmr y enqueuedAt originales, así conservan la antigüedad.
+// Idempotente: una segunda ejecución encuentra "rolled_back" y no hace nada.
+// KEYS: formación, índice de formaciones, cola por rating, cola por espera, partida en vivo,
+//       n tickets, n partidas activas (en el mismo orden que la foto).
 // ARGV: matchId.
 export const restoreFormationScript = `
 local status = redis.call('HGET', KEYS[1], 'status')
@@ -156,9 +155,9 @@ redis.call('ZREM', KEYS[2], ARGV[1])
 return restored
 `;
 
-// A reserved player leaves while the match is still forming: the formation
-// remembers it so that commit refuses and restore skips that player.
-// KEYS: formation, player's active match. ARGV: playerId, matchId.
+// Un jugador reservado se va mientras la partida se forma: la formación lo recuerda, así el
+// commit no se hace y la compensación saltea a ese jugador.
+// KEYS: formación, partida activa del jugador. ARGV: playerId, matchId.
 export const abandonFormationScript = `
 if redis.call('GET', KEYS[2]) ~= ARGV[2] then return 0 end
 if redis.call('HGET', KEYS[1], 'status') ~= 'reserved' then return 0 end

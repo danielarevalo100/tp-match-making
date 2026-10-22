@@ -24,9 +24,9 @@ const candidateScanLimit = 500;
 const defaultStaleAfterMs = 30_000;
 
 /**
- * Rating range accepted for a player that has been waiting `waitedMs`: it starts
- * at `initialRatingRange` and grows by `ratingRangeStep` every `expandEverySeconds`,
- * capped at `maxRatingRange`.
+ * Rango de rating aceptado para un jugador que espera hace `waitedMs`: empieza en
+ * `initialRatingRange` y crece `ratingRangeStep` cada `expandEverySeconds`, hasta
+ * `maxRatingRange`.
  */
 export function acceptedRatingRange(waitedMs: number, mode: FormationMode): number {
   const steps = Math.floor(Math.max(0, waitedMs) / (mode.expandEverySeconds * 1_000));
@@ -34,12 +34,12 @@ export function acceptedRatingRange(waitedMs: number, mode: FormationMode): numb
 }
 
 /**
- * Match formation saga (problem 2). Order of writes:
- *   A. Redis  reserve  - atomically moves the players from the queue into a "reserved" formation
- *   B. Mongo  create   - inserts the match document (key = matchId, so retries do not duplicate)
- *   C. Redis  commit   - publishes the live match and closes the formation
- * If B or C fail, or a reserved player leaves, the compensation runs in reverse:
- *   Mongo delete(matchId) and then Redis restore (players back with their original enqueuedAt).
+ * Saga de formación de partida (problema 2). Orden de escrituras:
+ *   A. Redis  reserve  - mueve los jugadores de la cola a una formación "reserved", de forma atómica
+ *   B. Mongo  create   - inserta el documento de la partida (clave = matchId, un reintento no duplica)
+ *   C. Redis  commit   - publica la partida en vivo y cierra la formación
+ * Si fallan B o C, o se va un jugador reservado, la compensación corre en orden inverso:
+ *   Mongo delete(matchId) y después Redis restore (jugadores de vuelta con su enqueuedAt original).
  */
 export class MatchFormationService {
   constructor(
@@ -61,7 +61,7 @@ export class MatchFormationService {
 
       const matchId = randomUUID();
       const reservation = await this.queue.reserveFormation(matchId, plan.players);
-      // Someone left between the read and the reservation: nothing was written, try again.
+      // Alguien se fue entre la lectura y la reserva: no se escribió nada, se vuelve a intentar.
       if (reservation.status === "missing") continue;
 
       return this.completeFormation(matchId, mode, input.region, plan.players, plan.ratingRange);
@@ -70,7 +70,7 @@ export class MatchFormationService {
     throw new FormationContendedError(input.mode, input.region);
   }
 
-  /** Compensates formations left half-done (for example by a crash of the process). */
+  /** Compensa formaciones que quedaron a medias (por ejemplo por una caída del proceso). */
   async recoverStaleFormations(olderThanMs = defaultStaleAfterMs): Promise<RecoveryResult> {
     const recovered: { matchId: string; restored: readonly string[] }[] = [];
     for (const matchId of await this.queue.findStaleFormations(olderThanMs)) {
@@ -107,7 +107,7 @@ export class MatchFormationService {
     const others = inRange
       .filter((ticket) => ticket.playerId !== anchor.playerId)
       .sort((a, b) => a.enqueuedAt - b.enqueuedAt || a.playerId.localeCompare(b.playerId));
-    // The longest-waiting player always gets a place; the rest are taken oldest first.
+    // El jugador que más espera siempre entra; el resto se toma del que espera más al que menos.
     const players = [anchor, ...others].slice(0, mode.maxPlayers);
 
     if (players.length < mode.minPlayers) {
@@ -156,7 +156,7 @@ export class MatchFormationService {
       try {
         await this.compensate(matchId);
       } catch (compensationError: unknown) {
-        // The formation stays "reserved" and recoverStaleFormations() will undo it.
+        // La formación queda "reserved" y recoverStaleFormations() la va a deshacer.
         console.error(`Compensation of match ${matchId} failed.`, compensationError);
       }
       throw error;

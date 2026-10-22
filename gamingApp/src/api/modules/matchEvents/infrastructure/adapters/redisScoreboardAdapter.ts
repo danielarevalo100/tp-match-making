@@ -39,20 +39,18 @@ function toOutcome(reply: unknown): ApplyOutcome {
 
 export class RedisScoreboardAdapter extends BaseRedisAdapter implements LiveScoreboardPort {
   findLiveMatch(matchId: string): Promise<LiveMatch | null> {
-    return this.run("matchEvents.findLiveMatch", async () =>
-      toLiveMatch(await this.redis.hgetall(redisKeys.match(matchId))),
-    );
+    return this.read(async () => toLiveMatch(await this.redis.hgetall(redisKeys.match(matchId))));
   }
 
   apply(event: MatchEvent): Promise<ApplyOutcome> {
-    return this.run("matchEvents.applyScoreboard", async () => {
+    return this.write(async () => {
       const [keyCount, ...args] = scriptArguments(event);
       return toOutcome(await this.redis.eval(applyEventScript, keyCount, ...args));
     });
   }
 
   applyMany(events: readonly MatchEvent[]): Promise<number> {
-    return this.run("matchEvents.applyScoreboard", async () => {
+    return this.write(async () => {
       const pipeline = this.redis.pipeline();
       for (const event of events) {
         const [keyCount, ...args] = scriptArguments(event);
@@ -67,7 +65,7 @@ export class RedisScoreboardAdapter extends BaseRedisAdapter implements LiveScor
   }
 
   findScoreboard(matchId: string): Promise<Scoreboard | null> {
-    return this.run("matchEvents.findScoreboard", async () => {
+    return this.read(async () => {
       const replies =
         (await this.redis
           .pipeline()

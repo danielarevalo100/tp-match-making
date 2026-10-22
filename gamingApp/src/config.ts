@@ -4,7 +4,7 @@ const number = (fallback: number) => z.coerce.number().int().positive().default(
 const text = (fallback: string) => z.string().trim().min(1).default(fallback);
 const required = z.string().trim().min(1);
 
-// Environment variables of the app (see .env.example). Missing optional ones take the default.
+// Variables de entorno de la app (ver .env.example). Las opcionales que faltan toman el valor por defecto.
 const environmentSchema = z.object({
   SERVICE_NAME: text("gaming-app"),
   PORT: number(3_000),
@@ -18,7 +18,7 @@ const environmentSchema = z.object({
   REDIS_CONNECT_RETRIES: number(10),
   REDIS_RETRY_DELAY_MS: number(2_000),
 
-  /** Comma-separated list of hosts. */
+  /** Lista de hosts separada por comas. */
   CASSANDRA_CONTACT_POINTS: required.transform((value) =>
     value
       .split(",")

@@ -9,6 +9,7 @@ import {
 } from "../../../../src/api/modules/matchmaking/business/services/matchFormationService.js";
 import { InjectedFailureError } from "../../../../src/shared/errors.js";
 import { requestContext } from "../../../../src/shared/requestContext.js";
+import { failOnce } from "../../../support/failOnce.js";
 import { InMemoryEligibilityRepository } from "../../../support/inMemory/inMemoryEligibilityRepository.js";
 import { InMemoryMatchRepository } from "../../../support/inMemory/inMemoryMatchRepository.js";
 import { InMemoryMatchmakingQueue } from "../../../support/inMemory/inMemoryMatchmakingQueue.js";
@@ -79,7 +80,7 @@ describe("MatchFormationService", () => {
     assert.equal((await service.form(input)).status, "not_enough_players");
     assert.equal(queue.tickets.size, 2);
 
-    enqueue(ticket("a", 1_000, now - 30_000)); // 30s waited -> range 150
+    enqueue(ticket("a", 1_000, now - 30_000)); // esperó 30s -> rango 150
     assert.equal((await service.form(input)).status, "formed");
   });
 
@@ -89,7 +90,7 @@ describe("MatchFormationService", () => {
     enqueue(a, b);
 
     await assert.rejects(
-      requestContext.run({ failAt: "matchmaking.createMatch" }, () => service.form(input)),
+      requestContext.run({ failDb: "mongo" }, () => service.form(input)),
       InjectedFailureError,
     );
 
@@ -103,10 +104,8 @@ describe("MatchFormationService", () => {
   it("restores everyone when the commit fails", async () => {
     enqueue(ticket("a", 1_000, 1_000), ticket("b", 1_010, 2_000));
 
-    await assert.rejects(
-      requestContext.run({ failAt: "matchmaking.commit" }, () => service.form(input)),
-      InjectedFailureError,
-    );
+    failOnce(queue, "commitFormation", "redis");
+    await assert.rejects(service.form(input), InjectedFailureError);
 
     assert.equal(queue.tickets.size, 2);
     assert.equal(queue.tickets.get("a")?.enqueuedAt, 1_000);
@@ -118,7 +117,7 @@ describe("MatchFormationService", () => {
     enqueue(ticket("a", 1_000, 1_000), b);
     const originalCommit = queue.commitFormation.bind(queue);
     queue.commitFormation = async (...args) => {
-      await queue.leave("a"); // "a" abandons after the reservation, before the commit
+      await queue.leave("a"); // "a" se va después de la reserva, antes del commit
       return originalCommit(...args);
     };
 
@@ -137,11 +136,9 @@ describe("MatchFormationService", () => {
     matches.create = async () => {
       throw new Error("mongo down");
     };
-    await assert.rejects(
-      requestContext.run({ failAt: "matchmaking.restore" }, () => service.form(input)),
-      /mongo down/,
-    );
-    // Compensation failed (injected) -> still reserved, nobody in the queue.
+    failOnce(queue, "restoreFormation", "redis");
+    await assert.rejects(service.form(input), /mongo down/);
+    // La compensación falló (inyectada) -> sigue reservada, nadie en la cola.
     assert.equal(queue.tickets.size, 0);
 
     const first = await service.recoverStaleFormations(0);

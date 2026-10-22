@@ -58,10 +58,10 @@ function toReversibleMatch(document: MatchDocument): ReversibleMatch {
 }
 
 /**
- * New value of `seasonRatings`, computed inside the update: for each affected season where the
- * player has a standing in the mode, the delta is subtracted from `mmr` and `revision` grows (so
- * Redis accepts it); `gamesPlayed` only drops in the season that contained the match. Seasons and
- * modes without a standing are left untouched, and a player without `seasonRatings` keeps none.
+ * Nuevo valor de `seasonRatings`, calculado dentro del update: en cada temporada afectada donde el
+ * jugador tiene standing en el modo, se resta el delta de `mmr` y crece `revision` (así Redis lo
+ * acepta); `gamesPlayed` solo baja en la temporada que contenía la partida. Las temporadas y modos
+ * sin standing no se tocan, y un jugador sin `seasonRatings` sigue sin tenerlo.
  */
 function seasonRatingsReversal(reversal: RatingReversal): Document {
   const standing = `$$season.v.${reversal.mode}`;
@@ -128,7 +128,7 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
   }
 
   findMatches(matchIds: readonly string[]): Promise<ReversibleMatch[]> {
-    return this.run("sanctions.findMatches", async () => {
+    return this.read(async () => {
       if (matchIds.length === 0) return [];
       const documents = await this.matches
         .find(
@@ -152,7 +152,7 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
   }
 
   findSeasonCatalog(): Promise<SeasonCatalog> {
-    return this.run("sanctions.findSeasonCatalog", async () => {
+    return this.read(async () => {
       const [modes, seasons] = await Promise.all([
         this.gameModes.find({ ranked: true }, { projection: { _id: 1 } }).toArray(),
         this.seasons.find({ status: { $in: ["active", "closed"] } }).toArray(),
@@ -170,7 +170,7 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
   }
 
   voidMatch(matchId: string, sanctionId: string, at: Date): Promise<void> {
-    return this.run("sanctions.voidMatch", async () => {
+    return this.write(async () => {
       const result = await this.matches.updateOne(
         { _id: matchId, scoringStatus: "applied", status: "closed" },
         { $set: { status: "voided", voided: { at, sanctionId } } },
@@ -182,10 +182,11 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
     });
   }
 
-  // Same technique as problem 4's applyRating: one pipeline update per player document, guarded by
-  // the match id, so a retry (or a second sanction voiding the same match) never reverts twice.
+  // Misma técnica que applyRating del problema 4: un update con pipeline por documento de jugador,
+  // protegido por el id de la partida, así un reintento (o una segunda sanción que anula la misma
+  // partida) nunca revierte dos veces.
   revertRating(reversal: RatingReversal): Promise<void> {
-    return this.run("sanctions.revertRating", async () => {
+    return this.write(async () => {
       const rating = `ratings.${reversal.mode}`;
       const update: Document[] = [
         {
@@ -208,7 +209,7 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
       if (reversal.seasonIds.length > 0) {
         update.push({ $set: { seasonRatings: seasonRatingsReversal(reversal) } });
       }
-      // No match: problem 4 never applied this rating to the player, or it was already reverted.
+      // Si no matchea: el problema 4 nunca le aplicó este rating al jugador, o ya se revirtió.
       await this.players.updateOne(
         {
           _id: reversal.playerId,
@@ -225,7 +226,7 @@ export class MongoResultReversalAdapter extends BaseMongoAdapter implements Resu
     seasonId: string,
     mode: string,
   ): Promise<SeasonStanding[]> {
-    return this.run("sanctions.findStandings", async () => {
+    return this.read(async () => {
       if (playerIds.length === 0) return [];
       const players = await this.players
         .find(

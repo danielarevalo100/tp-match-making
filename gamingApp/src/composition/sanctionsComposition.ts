@@ -26,7 +26,7 @@ type SanctionsConnections = {
   redis: Redis;
 };
 
-/** Problem 8: the sanction with its reversal, and the player profile that traces every engine. */
+/** Problema 8: la sanción con su reversión, y el perfil del jugador que recorre todas las bases. */
 export function createSanctionsComposition(connections: SanctionsConnections): ModuleRoute[] {
   const leaderboard = new RedisLeaderboardAdapter(connections.redis);
   const sanctions = new SanctionService(

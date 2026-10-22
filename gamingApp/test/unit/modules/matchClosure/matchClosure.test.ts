@@ -12,8 +12,9 @@ import type {
 import { MatchClosureService } from "../../../../src/api/modules/matchClosure/business/services/matchClosureService.js";
 import { MatchClosureController } from "../../../../src/api/modules/matchClosure/presentation/controllers/matchClosureController.js";
 import { createMatchClosureRouter } from "../../../../src/api/modules/matchClosure/presentation/routers/matchClosureRouter.js";
-import { InjectedFailureError } from "../../../../src/shared/errors.js";
+import { InjectedFailureError, type StorageEngine } from "../../../../src/shared/errors.js";
 import { requestContext } from "../../../../src/shared/requestContext.js";
+import { failOnce } from "../../../support/failOnce.js";
 import { InMemoryLeaderboardRanking } from "../../../support/inMemory/inMemoryLeaderboards.js";
 import {
   InMemoryLiveMatchClosure,
@@ -87,8 +88,8 @@ function finish(overrides: Partial<FinishMatchInput> = {}): FinishMatchInput {
   };
 }
 
-const withFailure = <T>(step: string, run: () => Promise<T>): Promise<T> =>
-  requestContext.run({ failAt: step }, run);
+const withFailedDb = <T>(engine: StorageEngine, run: () => Promise<T>): Promise<T> =>
+  requestContext.run({ failDb: engine }, run);
 
 describe("MatchClosureService", () => {
   let context = build();
@@ -130,7 +131,7 @@ describe("MatchClosureService", () => {
   it("compensates preparation when the injected Cassandra failure happened before commit", async () => {
     const input = finish();
     await assert.rejects(
-      withFailure("matchClosure.appendFinished", () => context.service.finish(input)),
+      withFailedDb("cassandra", () => context.service.finish(input)),
       InjectedFailureError,
     );
 
@@ -142,10 +143,8 @@ describe("MatchClosureService", () => {
 
   it("does not roll back after the finish event and resumes forward on retry", async () => {
     const input = finish();
-    await assert.rejects(
-      withFailure("matchClosure.releasePlayers", () => context.service.finish(input)),
-      InjectedFailureError,
-    );
+    failOnce(context.live, "release", "redis");
+    await assert.rejects(context.service.finish(input), InjectedFailureError);
 
     assert.equal(context.log.finished.size, 1);
     assert.equal(context.matches.matches.get(matchId)?.status, "closing");
@@ -158,9 +157,8 @@ describe("MatchClosureService", () => {
 
   it("keeps the match closed and players free when scoring fails", async () => {
     const input = finish();
-    const result = await withFailure("matchClosure.listEvents", () =>
-      context.service.finish(input),
-    );
+    failOnce(context.log, "listScoringEvents", "cassandra");
+    const result = await context.service.finish(input);
 
     assert.equal(result.scoringStatus, "failed");
     assert.equal(context.matches.matches.get(matchId)?.status, "closed");
@@ -170,7 +168,8 @@ describe("MatchClosureService", () => {
 
   it("retries failed scoring without applying ratings twice", async () => {
     const input = finish();
-    await withFailure("matchClosure.completeScoring", () => context.service.finish(input));
+    failOnce(context.matches, "completeScoring", "mongo");
+    await context.service.finish(input);
     assert.equal(context.matches.ratings.get(alice), 1_525);
 
     const retried = await context.service.finish(input);
@@ -181,9 +180,8 @@ describe("MatchClosureService", () => {
 
   it("does not downgrade applied scoring when the completion response is lost", async () => {
     const input = finish();
-    const result = await withFailure("matchClosure.completeScoringAfterWrite", () =>
-      context.service.finish(input),
-    );
+    failOnce(context.matches, "completeScoring", "mongo", { afterRunning: true });
+    const result = await context.service.finish(input);
 
     assert.equal(result.scoringStatus, "applied");
     assert.equal(context.matches.matches.get(matchId)?.scoringStatus, "applied");
@@ -208,9 +206,8 @@ describe("MatchClosureService", () => {
 
   it("never publishes the leaderboard ahead of the rating or the final scoreboard", async () => {
     const input = finish();
-    const result = await withFailure("matchClosure.completeScoring", () =>
-      context.service.finish(input),
-    );
+    failOnce(context.matches, "completeScoring", "mongo");
+    const result = await context.service.finish(input);
 
     assert.equal(result.scoringStatus, "failed");
     assert.equal(result.leaderboardStatus, "pending");
@@ -221,7 +218,8 @@ describe("MatchClosureService", () => {
 
   it("keeps scoring applied and retries only the leaderboard when publishing fails", async () => {
     const input = finish();
-    const result = await withFailure("leaderboard.publish", () => context.service.finish(input));
+    failOnce(context.leaderboard, "publish", "redis");
+    const result = await context.service.finish(input);
 
     assert.equal(result.scoringStatus, "applied");
     assert.equal(result.leaderboardStatus, "pending");
@@ -288,13 +286,25 @@ describe("match closure API", () => {
     const context = build();
     const input = finish();
     const { matchId: _matchId, ...body } = input;
-    const response = await request(context.app)
-      .post(`/matches/${matchId}/finish`)
-      .set("x-fail-at", "leaderboard.publish")
-      .send(body);
+    failOnce(context.leaderboard, "publish", "redis");
+    const response = await request(context.app).post(`/matches/${matchId}/finish`).send(body);
 
     assert.equal(response.status, 202);
     assert.equal((response.body as { leaderboardStatus: string }).leaderboardStatus, "pending");
+  });
+
+  it("answers 500 and leaves the match open when Cassandra fails (x-fail-db)", async () => {
+    const context = build();
+    const { matchId: _matchId, ...body } = finish();
+    const response = await request(context.app)
+      .post(`/matches/${matchId}/finish`)
+      .set("x-fail-db", "cassandra")
+      .send(body);
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(response.body, { error: "INJECTED_FAILURE", engine: "cassandra" });
+    assert.equal(context.matches.matches.get(matchId)?.status, "in_progress");
+    assert.equal(context.live.live.get(matchId)?.status, "in_progress");
   });
 
   it("validates and closes a match", async () => {

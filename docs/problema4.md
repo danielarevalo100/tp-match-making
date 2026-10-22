@@ -265,27 +265,15 @@ El snapshot final conserva `mmrBefore`, `ratingDelta` y `mmrAfter` calculados de
 
 ## Inyección de fallas
 
-Pasos relevantes para `x-fail-at`:
+Header `x-fail-db: <base>`: falla la primera escritura en esa base durante el cierre.
 
-```text
-matchClosure.findMatch
-matchClosure.beginClosing
-matchClosure.prepareMongo
-matchClosure.rollbackMongo
-matchClosure.rollbackClosing
-matchClosure.appendFinished
-matchClosure.releasePlayers
-matchClosure.markClosed
-matchClosure.beginScoring
-matchClosure.findLeaderboardSeason
-matchClosure.listEvents
-matchClosure.applyRating
-matchClosure.completeScoring
-matchClosure.failScoring
-matchClosure.findStandings
-leaderboard.publish
-matchClosure.markLeaderboard
-```
+| Header | Falla | Resultado |
+|---|---|---|
+| `x-fail-db: redis` | pasar a `closing` | `500`; nada cambió. |
+| `x-fail-db: mongo` | prepare en Mongo | `500`; Redis se compensa a `in_progress`. |
+| `x-fail-db: cassandra` | evento `match_finished` | `500`; Mongo y Redis vuelven a `in_progress`. |
+
+Los pasos posteriores al commit (release, scoring, publicación del leaderboard) no son la primera escritura de su base, así que se prueban en los tests unitarios (`matchClosure.test.ts`) haciendo fallar ese paso del doble en memoria.
 
 ## Pruebas
 

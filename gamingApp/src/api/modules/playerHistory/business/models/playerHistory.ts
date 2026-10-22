@@ -3,7 +3,7 @@ import type {
   PlayerResult,
 } from "../../../matchClosure/business/models/matchClosure.js";
 
-/** One match of a player's history (Cassandra `matches_by_player`). */
+/** Una partida del historial de un jugador (Cassandra `matches_by_player`). */
 export type HistoryEntry = {
   deaths: number;
   endedAt: Date;
@@ -25,7 +25,7 @@ export type PeriodWindow = { from: Date; to: Date };
 
 export type RatingPoint = { endedAt: Date; mmr: number };
 
-/** Rating of one mode over the period: where it started, where it ended and the points between. */
+/** Rating de un modo en el período: dónde empezó, dónde terminó y los puntos intermedios. */
 export type RatingEvolution = {
   change: number;
   from: number;
@@ -66,7 +66,7 @@ export type PlayerHistoryView = {
   };
 };
 
-/** A closed match with its authoritative final scoreboard (written by problem 4 in MongoDB). */
+/** Una partida cerrada con su marcador final oficial (lo escribe el problema 4 en MongoDB). */
 export type ClosedMatch = {
   endedAt: Date;
   id: string;
@@ -89,7 +89,7 @@ export type ProjectionInput = {
 
 export type ProjectionResult = {
   matches: number;
-  /** Pass it as `afterId` to continue; `null` when there is nothing left to project. */
+  /** Pasarlo como `afterId` para continuar; `null` cuando no queda nada por proyectar. */
   nextCursor: string | null;
   rows: number;
 };

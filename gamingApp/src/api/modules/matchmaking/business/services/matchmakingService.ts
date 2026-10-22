@@ -53,8 +53,8 @@ export class MatchmakingService {
     switch (outcome.status) {
       case "enqueued":
       case "replayed":
-        // A sanction may have been applied between the check above and the
-        // Redis write; re-check now that the ticket is visible in the queue.
+        // Pudo aplicarse una sanción entre el chequeo de arriba y la escritura en Redis; se
+        // vuelve a chequear ahora que el ticket ya está visible en la cola.
         await this.assertNotSanctionedOrLeave(player.id);
         return { created: outcome.status === "enqueued", ticket: outcome.ticket };
       case "already_in_queue":

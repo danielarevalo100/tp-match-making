@@ -41,12 +41,12 @@ El marcador es **derivado** del log (se puede reconstruir con `reconcile`), pero
 | Falla | Cassandra | Redis | Cómo se arregla |
 |---|---|---|---|
 | Paso 0 (Redis caído) | — | — | `503 STORAGE_ERROR engine=redis`. Reintentar. |
-| Paso 1 (Cassandra caído / `x-fail-at: matchEvents.appendEvent`) | sin cambios | sin cambios | `503` / `500`. Reintentar el mismo evento. |
-| Paso 2 (`x-fail-at: matchEvents.applyScoreboard`, o Redis cae entre pasos) | **tiene el evento** | no lo aplicó | Reintentar el mismo `eventId` (Cassandra sobrescribe la misma fila, Redis aplica) **o** `POST …/scoreboard/reconcile`. |
+| Paso 1 (Cassandra caído / `x-fail-db: cassandra`) | sin cambios | sin cambios | `503` / `500`. Reintentar el mismo evento. |
+| Paso 2 (`x-fail-db: redis`, o Redis cae entre pasos) | **tiene el evento** | no lo aplicó | Reintentar el mismo `eventId` (Cassandra sobrescribe la misma fila, Redis aplica) **o** `POST …/scoreboard/reconcile`. |
 | Respuesta HTTP perdida (el cliente reintenta) | sobrescribe la misma fila | el script responde `DUPLICATE` | Responde `200 duplicate`. Nada se cuenta dos veces. |
 | La partida se cierra entre paso 0 y 2 | tiene el evento | el script responde `NOT_LIVE` | `404 MATCH_NOT_LIVE`. El evento queda en el log pero no puntúa (ver limitaciones). |
 
-Probado en vivo: con `docker stop gaming-cassandra` el POST responde `503 {"error":"STORAGE_ERROR","engine":"cassandra","step":"matchEvents.appendEvent"}`, el marcador queda intacto y sigue legible; al volver Cassandra el driver reconecta solo y el reintento del mismo `eventId` responde `201 recorded`.
+Probado en vivo: con `docker stop gaming-cassandra` el POST responde `503 {"error":"STORAGE_ERROR","engine":"cassandra"}`, el marcador queda intacto y sigue legible; al volver Cassandra el driver reconecta solo y el reintento del mismo `eventId` responde `201 recorded`.
 
 ## Idempotencia del marcador (`HINCRBY` no lo es)
 
@@ -134,7 +134,7 @@ Cuerpo del `POST` de eventos (`schemas/matchEventSchema.ts`):
 
 ## Inyección de fallas
 
-Header `x-fail-at: <paso>`: `matchEvents.findLiveMatch`, `matchEvents.appendEvent`, `matchEvents.applyScoreboard`, `matchEvents.listEvents`, `matchEvents.findScoreboard`. Para una falla real: `docker stop gaming-cassandra` (o `gaming-redis`) durante la carga.
+Header `x-fail-db: cassandra` (falla la escritura del log, no queda nada) o `x-fail-db: redis` (el evento queda en el log pero no en el marcador). Para una falla real: `docker stop gaming-cassandra` (o `gaming-redis`) durante la carga.
 
 ## Simulación y resultados
 

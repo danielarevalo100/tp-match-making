@@ -24,9 +24,9 @@ export interface MatchClosureRepositoryPort {
     at: Date,
   ): Promise<void>;
   failScoring(matchId: string, closureId: string, message: string, at: Date): Promise<void>;
-  /** Season whose leaderboard the match counts for: ranked mode and active season. */
+  /** Temporada para la que cuenta la partida: modo rankeado y temporada activa. */
   findLeaderboardSeason(mode: string, playedAt: Date): Promise<string | null>;
-  /** Applies the rating once per (match, player), with the season standing in the same write. */
+  /** Aplica el rating una vez por (partida, jugador), con el standing de temporada en la misma escritura. */
   applyRating(input: ApplyRatingInput): Promise<void>;
   findStandings(
     playerIds: readonly string[],
@@ -56,7 +56,7 @@ export interface MatchClosureLogPort {
   listScoringEvents(matchId: string, limit: number, pageState?: string): Promise<ScoringEventPage>;
 }
 
-/** Season leaderboard (problem 5). Publishing the same or an older standing again is a no-op. */
+/** Leaderboard de temporada (problema 5). Publicar otra vez el mismo standing, o uno más viejo, no hace nada. */
 export interface MatchLeaderboardPort {
   publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void>;
 }

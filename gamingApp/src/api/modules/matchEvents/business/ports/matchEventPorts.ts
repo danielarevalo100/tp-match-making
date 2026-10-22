@@ -7,19 +7,19 @@ import type {
   Scoreboard,
 } from "../models/matchEvent.js";
 
-/** Durable, append-only record of every event (Cassandra). */
+/** Registro durable de todos los eventos, que solo crece (Cassandra). */
 export interface MatchEventLogPort {
-  /** Idempotent: writing the same (matchId, tsMs, eventId) again overwrites the same row. */
+  /** Idempotente: escribir otra vez el mismo (matchId, tsMs, eventId) pisa la misma fila. */
   append(event: MatchEvent): Promise<void>;
   list(matchId: string, query: EventQuery): Promise<EventPage>;
 }
 
-/** Live state of the match: who is playing and the running score (Redis). */
+/** Estado en vivo de la partida: quién juega y el puntaje parcial (Redis). */
 export interface LiveScoreboardPort {
   findLiveMatch(matchId: string): Promise<LiveMatch | null>;
-  /** Atomic and idempotent per `eventId`: an event already applied changes nothing. */
+  /** Atómico e idempotente por `eventId`: un evento ya aplicado no cambia nada. */
   apply(event: MatchEvent): Promise<ApplyOutcome>;
-  /** Same as `apply` for many events in one round trip; returns how many were newly applied. */
+  /** Igual que `apply` para muchos eventos en un solo viaje; devuelve cuántos se aplicaron ahora. */
   applyMany(events: readonly MatchEvent[]): Promise<number>;
   findScoreboard(matchId: string): Promise<Scoreboard | null>;
 }

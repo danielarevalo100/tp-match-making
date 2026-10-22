@@ -64,9 +64,9 @@ export class LeaderboardService {
   }
 
   /**
-   * Recovery path: republishes every standing MongoDB holds for the season and mode, then removes
-   * the Redis members MongoDB no longer ranks. Publishing is revision-guarded, so it can run while
-   * matches keep closing without regressing anyone.
+   * Recuperación: vuelve a publicar todos los standings que MongoDB tiene para la temporada y
+   * modo, y después saca de Redis a los que MongoDB ya no rankea. La publicación respeta la
+   * revisión, así puede correr mientras se siguen cerrando partidas sin hacer retroceder a nadie.
    */
   async rebuild(seasonId: string, mode: string): Promise<LeaderboardRebuildResult> {
     await this.assertBoard({ mode, region: null, seasonId });
@@ -78,8 +78,8 @@ export class LeaderboardService {
     }
 
     const unseen = (await this.ranking.listMembers(seasonId, mode)).filter((id) => !seen.has(id));
-    // A player ranked for the first time while the scan was running is in Redis without having
-    // been seen: ask MongoDB again before removing anyone.
+    // Un jugador rankeado por primera vez mientras corría el recorrido está en Redis sin haber
+    // sido visto: se le vuelve a preguntar a MongoDB antes de sacar a alguien.
     const rankedMeanwhile = new Set(
       (await this.directory.findStandings(unseen, seasonId, mode)).map(
         (standing) => standing.playerId,

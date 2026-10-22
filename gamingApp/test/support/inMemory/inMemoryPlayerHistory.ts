@@ -11,31 +11,24 @@ import type {
   PlayerDirectoryPort,
   PlayerHistoryStorePort,
 } from "../../../src/api/modules/playerHistory/business/ports/playerHistoryPorts.js";
-import { InjectedFailureError } from "../../../src/shared/errors.js";
-import { requestContext } from "../../../src/shared/requestContext.js";
-
-function failIfRequested(step: string): void {
-  if (requestContext.getStore()?.failAt === step) throw new InjectedFailureError(step);
-}
+import { failIfRequested } from "../../../src/shared/requestContext.js";
 
 export class InMemoryPlayerHistoryStore implements PlayerHistoryStorePort {
-  // Keyed like the Cassandra primary key, so a retry overwrites instead of duplicating.
+  // Con la misma clave que la primaria de Cassandra, así un reintento pisa en lugar de duplicar.
   readonly rows = new Map<string, HistoryRow>();
 
   async append(rows: readonly HistoryRow[]): Promise<void> {
-    failIfRequested("playerHistory.appendRows");
+    failIfRequested("cassandra");
     for (const row of rows) {
       this.rows.set(`${row.playerId}|${String(row.endedAt.getTime())}|${row.matchId}`, row);
     }
   }
 
   async findLatest(playerId: string, limit: number): Promise<HistoryEntry[]> {
-    failIfRequested("playerHistory.findLatest");
     return this.forPlayer(playerId).slice(0, limit);
   }
 
   async findSince(playerId: string, since: Date): Promise<HistoryEntry[]> {
-    failIfRequested("playerHistory.findSince");
     return this.forPlayer(playerId).filter((entry) => entry.endedAt >= since);
   }
 
@@ -51,12 +44,10 @@ export class InMemoryPlayerDirectory implements PlayerDirectoryPort {
   season: ActiveSeason | null = null;
 
   async findPlayer(playerId: string): Promise<HistoryPlayer | null> {
-    failIfRequested("playerHistory.findPlayer");
     return this.players.get(playerId) ?? null;
   }
 
   async findActiveSeason(): Promise<ActiveSeason | null> {
-    failIfRequested("playerHistory.findActiveSeason");
     return this.season;
   }
 }
@@ -65,7 +56,6 @@ export class InMemoryClosedMatchSource implements ClosedMatchSourcePort {
   readonly matches: ClosedMatch[] = [];
 
   async listClosedMatches(query: ClosedMatchQuery): Promise<ClosedMatch[]> {
-    failIfRequested("playerHistory.listClosedMatches");
     return this.matches
       .filter(
         (match) =>

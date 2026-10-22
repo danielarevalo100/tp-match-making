@@ -19,9 +19,9 @@ export class CassandraPlayerHistoryAdapter
   extends BaseCassandraAdapter
   implements PlayerHistoryStorePort
 {
-  // The primary key (player_id, ended_at, match_id) makes a retry write the very same row.
+  // La clave primaria (player_id, ended_at, match_id) hace que un reintento escriba la misma fila.
   append(rows: readonly HistoryRow[]): Promise<void> {
-    return this.run("playerHistory.appendRows", async () => {
+    return this.write(async () => {
       for (let start = 0; start < rows.length; start += writeConcurrency) {
         await Promise.all(
           rows
@@ -49,14 +49,14 @@ export class CassandraPlayerHistoryAdapter
   }
 
   findLatest(playerId: string, limit: number): Promise<HistoryEntry[]> {
-    return this.run("playerHistory.findLatest", async () => {
+    return this.read(async () => {
       const result = await this.client.execute(selectLatest, [playerId, limit]);
       return result.rows.map(toHistoryEntry);
     });
   }
 
   findSince(playerId: string, since: Date): Promise<HistoryEntry[]> {
-    return this.run("playerHistory.findSince", async () => {
+    return this.read(async () => {
       const entries: HistoryEntry[] = [];
       let pageState: string | undefined;
       do {

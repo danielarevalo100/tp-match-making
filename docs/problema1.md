@@ -83,9 +83,9 @@ presentation/ router, controller, schemas (zod)
 composition/  cablea adaptadores con servicios (matchmakingComposition.ts)
 ```
 
-Los adaptadores extienden `BaseMongoAdapter` / `BaseRedisAdapter` → `BaseAdapter.run(step, fn)`. **`run` es el mecanismo de inyección de fallas**: si el header HTTP `x-fail-at` coincide con el nombre del paso, lanza `InjectedFailureError` (500 `INJECTED_FAILURE`); los errores del driver se envuelven en `StorageError` (503). El contexto del pedido se propaga con `AsyncLocalStorage` (`shared/requestContext.ts`, `middlewares/faultInjectionMiddleware.ts`).
+Los adaptadores extienden `BaseMongoAdapter` / `BaseRedisAdapter` → `BaseAdapter.read(fn)` / `BaseAdapter.write(fn)`. Los errores del driver se envuelven en `StorageError` (503). **`write` es el mecanismo de inyección de fallas**: con el header HTTP `x-fail-db: <base>` (`mongo`, `redis`, `cassandra` o `neo4j`), la primera escritura en esa base lanza `InjectedFailureError` (500 `INJECTED_FAILURE`) sin tocarla. El contexto del pedido se propaga con `AsyncLocalStorage` (`shared/requestContext.ts`, `middlewares/faultInjectionMiddleware.ts`).
 
-Pasos con nombre usados acá: `matchmaking.findPlayer`, `findActiveMode`, `isActiveRegion`, `findSanctionInForce`, `enqueue`, `findTicket`, `leave`.
+En este problema la única escritura es la de Redis (`x-fail-db: redis`): el pedido falla y el jugador no queda en ninguna cola.
 
 ## Tests y demo
 

@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-// Problem 3 demo: in-match events (Cassandra log + Redis live scoreboard).
+// Demo del problema 3: eventos dentro de la partida (log en Cassandra + marcador en vivo en Redis).
 //
-// Needs the stack running (mongodb, redis, cassandra with the schema applied, and gaming-app).
-// It uses the real flow of problems 1 and 2 to get live matches (registers players, queues them,
-// forms the matches), then:
-//   1. fires events at all the matches at the same time, with duplicates and out-of-order
-//      timestamps, while polling live scoreboards, and reports throughput and latency
-//   2. checks that every scoreboard equals what the events add up to, and that Cassandra kept
-//      every event exactly once
-//   3. provokes failures: before the log write, and between the log write and the scoreboard
+// Necesita el stack corriendo (mongodb, redis, cassandra con el esquema aplicado y gaming-app).
+// Usa el flujo real de los problemas 1 y 2 para tener partidas en vivo (registra jugadores, los
+// pone en cola, forma las partidas) y después:
+//   1. dispara eventos a todas las partidas a la vez, con duplicados y timestamps desordenados,
+//      mientras consulta los marcadores, e informa throughput y latencia
+//   2. controla que cada marcador sea la suma de los eventos, y que Cassandra guardó cada evento
+//      exactamente una vez
+//   3. provoca fallas: antes de escribir el log, y entre el log y el marcador
 //
 //   node scripts/demo-problem-3.mjs
 //
-// Overrides (environment): APP_URL, MATCHES (100), EVENTS_PER_MATCH (300), CONCURRENCY (64),
-// MODE (ranked_1v1), REGION (NA). Leaves the matches live: they have no close step until problem 4.
+// Se puede cambiar (entorno): APP_URL, MATCHES (100), EVENTS_PER_MATCH (300), CONCURRENCY (64),
+// MODE (ranked_1v1), REGION (NA). Deja las partidas en vivo: no se cierran hasta el problema 4.
 
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
@@ -45,7 +45,7 @@ async function call(method, path, body, headers = {}) {
   return { body: text ? JSON.parse(text) : null, status: response.status };
 }
 
-// Runs `worker` over `items` with at most `limit` in flight.
+// Ejecuta `worker` sobre `items` con a lo sumo `limit` en paralelo.
 async function pool(items, limit, worker) {
   let next = 0;
   const lane = async () => {
@@ -76,7 +76,7 @@ const summary = (label, samples) => {
 };
 
 // ---------------------------------------------------------------------------
-// Setup: live matches through problems 1 and 2
+// Preparación: partidas en vivo usando los problemas 1 y 2
 // ---------------------------------------------------------------------------
 
 async function createLiveMatches(count) {
@@ -112,7 +112,7 @@ async function createLiveMatches(count) {
 }
 
 // ---------------------------------------------------------------------------
-// Event generation and the scoreboard they must add up to
+// Generación de eventos y el marcador que tienen que sumar
 // ---------------------------------------------------------------------------
 
 function generateEvents(match, count, startMs) {
@@ -123,7 +123,7 @@ function generateEvents(match, count, startMs) {
     const base = {
       eventId: randomUUID(),
       playerId,
-      // Several events share a millisecond on purpose.
+      // Varios eventos comparten el mismo milisegundo a propósito.
       tsMs: startMs + Math.floor(i / 3) * 7,
     };
     if (roll < 0.6) {
@@ -201,7 +201,7 @@ for (const match of matches) {
     if (Math.random() < DUPLICATE_RATE) requests.push({ event, matchId: match.matchId });
   }
 }
-// Events of all matches interleaved and not in timestamp order.
+// Eventos de todas las partidas intercalados y sin orden de timestamp.
 shuffle(requests);
 
 const postLatencies = [];
@@ -270,15 +270,15 @@ const snapshot = async () => {
 };
 
 const before = await snapshot();
-console.log("  3a. Failure before the log write (x-fail-at: matchEvents.appendEvent)");
+console.log("  3a. Failure before the log write (x-fail-db: cassandra)");
 const lost = event();
-let response = await call("POST", `/matches/${target.matchId}/events`, lost, { "x-fail-at": "matchEvents.appendEvent" });
+let response = await call("POST", `/matches/${target.matchId}/events`, lost, { "x-fail-db": "cassandra" });
 check(response.status, 500, "the request fails");
 let after = await snapshot();
 check(`${after.log}/${after.events}`, `${before.log}/${before.events}`, "nothing was written to Cassandra nor to the scoreboard");
 
-console.log("  3b. Failure between the log and the scoreboard (x-fail-at: matchEvents.applyScoreboard)");
-response = await call("POST", `/matches/${target.matchId}/events`, lost, { "x-fail-at": "matchEvents.applyScoreboard" });
+console.log("  3b. Failure between the log and the scoreboard (x-fail-db: redis)");
+response = await call("POST", `/matches/${target.matchId}/events`, lost, { "x-fail-db": "redis" });
 check(response.status, 500, "the request fails");
 after = await snapshot();
 check(after.log, before.log + 1, "the event is already safe in Cassandra");
@@ -292,7 +292,7 @@ check(`${response.status}/${response.body.status}`, "200/duplicate", "a further 
 
 console.log("  3c. Same failure, repaired with reconcile instead of a retry");
 const orphan = event();
-await call("POST", `/matches/${target.matchId}/events`, orphan, { "x-fail-at": "matchEvents.applyScoreboard" });
+await call("POST", `/matches/${target.matchId}/events`, orphan, { "x-fail-db": "redis" });
 response = await call("POST", `/matches/${target.matchId}/scoreboard/reconcile`);
 check(`${response.body.repaired}`, "1", `reconcile repaired the missing event (read ${response.body.read})`);
 response = await call("POST", `/matches/${target.matchId}/scoreboard/reconcile`);

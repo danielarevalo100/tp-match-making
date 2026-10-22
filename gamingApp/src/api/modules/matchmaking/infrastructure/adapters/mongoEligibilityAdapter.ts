@@ -35,7 +35,7 @@ export class MongoEligibilityAdapter extends BaseMongoAdapter implements Eligibi
   }
 
   findPlayer(playerId: string): Promise<EligiblePlayer | null> {
-    return this.run("matchmaking.findPlayer", async () => {
+    return this.read(async () => {
       const player = await this.players.findOne(
         { _id: playerId },
         { projection: { accountStatus: 1, ratings: 1, region: 1 } },
@@ -45,21 +45,21 @@ export class MongoEligibilityAdapter extends BaseMongoAdapter implements Eligibi
   }
 
   findActiveMode(modeId: string): Promise<QueueMode | null> {
-    return this.run("matchmaking.findActiveMode", async () => {
+    return this.read(async () => {
       const mode = await this.gameModes.findOne({ _id: modeId, active: true });
       return mode ? toQueueMode(mode) : null;
     });
   }
 
   findFormationMode(modeId: string): Promise<FormationMode | null> {
-    return this.run("matchmaking.findFormationMode", async () => {
+    return this.read(async () => {
       const mode = await this.gameModes.findOne({ _id: modeId, active: true });
       return mode ? toFormationMode(mode) : null;
     });
   }
 
   isActiveRegion(regionId: string): Promise<boolean> {
-    return this.run("matchmaking.isActiveRegion", async () => {
+    return this.read(async () => {
       const count = await this.regions.countDocuments(
         { _id: regionId, active: true },
         { limit: 1 },
@@ -69,7 +69,7 @@ export class MongoEligibilityAdapter extends BaseMongoAdapter implements Eligibi
   }
 
   findSanctionInForce(playerId: string, at: Date): Promise<SanctionInForce | null> {
-    return this.run("matchmaking.findSanctionInForce", async () => {
+    return this.read(async () => {
       const sanction = await this.sanctions.findOne({
         playerId,
         status: "active",

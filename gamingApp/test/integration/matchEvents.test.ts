@@ -27,7 +27,7 @@ describe(
     const newMatch = async (players: string[]): Promise<string> => {
       const matchId = randomUUID();
       matchIds.push(matchId);
-      // What problem 2 publishes when a match is committed.
+      // Lo que publica el problema 2 cuando se confirma una partida.
       await redis.hset(redisKeys.match(matchId), {
         matchId,
         mode: "ranked_1v1",
@@ -77,12 +77,12 @@ describe(
         matchId,
         playerId: index % 2 === 0 ? alice : bob,
         targetPlayerId: index % 2 === 0 ? bob : alice,
-        // Many events share the same millisecond on purpose.
+        // Muchos eventos comparten el mismo milisegundo a propósito.
         tsMs: tsMs + Math.floor(index / 10),
         type: "kill" as const,
       }));
 
-      // Every event is sent three times at once, as a client retrying aggressively would.
+      // Cada evento se manda tres veces a la vez, como haría un cliente que reintenta agresivamente.
       const results = await Promise.all(
         events.flatMap((event) => [1, 2, 3].map(() => service.record(event))),
       );

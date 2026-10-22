@@ -8,17 +8,17 @@ import type {
 import type { MatchGraphPort, PlayerNamesPort, ReportsPort } from "../ports/fraudPorts.js";
 import { buildMatchFixingGroups, findReportBursts } from "./detectionRules.js";
 
-// The graph returns pairs, not groups; this bounds what a single detection reads.
+// El grafo devuelve pares, no grupos; esto acota lo que lee una detección.
 const maxPairs = 5_000;
 const minuteMs = 60_000;
 
 /**
- * Irregular behavior detection (problem 7), read-only. Two independent signals:
- *   - Match fixing: Neo4j finds the players who faced each other repeatedly, and the rules in
- *     `detectionRules` keep those where one of them wins (almost) every time.
- *   - Converging reports: MongoDB returns the players reported by many different people, and the
- *     rules keep those where that happened inside a short window.
- * Usernames are resolved at the end from MongoDB (the players collection), by the shared playerId.
+ * Detección de comportamiento irregular (problema 7), solo lectura. Dos señales independientes:
+ *   - Arreglo de partidas: Neo4j encuentra los jugadores que se enfrentaron muchas veces, y las
+ *     reglas de `detectionRules` se quedan con los pares donde uno gana (casi) siempre.
+ *   - Reportes coincidentes: MongoDB devuelve los jugadores reportados por muchas personas
+ *     distintas, y las reglas se quedan con los casos ocurridos dentro de una ventana corta.
+ * Los nombres de usuario se resuelven al final en MongoDB (`players`), por el playerId compartido.
  */
 export class FraudDetectionService {
   constructor(

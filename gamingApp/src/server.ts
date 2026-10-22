@@ -55,7 +55,7 @@ async function main(): Promise<void> {
     console.log(`${config.SERVICE_NAME} listening on port ${config.PORT}`);
   });
 
-  // Stop accepting requests and close the database connections (docker compose stop / Ctrl+C).
+  // Deja de aceptar pedidos y cierra las conexiones a las bases (docker compose stop / Ctrl+C).
   const shutdown = async (): Promise<void> => {
     console.log(`Shutting down ${config.SERVICE_NAME}`);
     server.close();

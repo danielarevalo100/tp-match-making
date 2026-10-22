@@ -15,7 +15,7 @@ export class MongoPlayerNamesAdapter extends BaseMongoAdapter implements PlayerN
   }
 
   findUsernames(playerIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
-    return this.run("fraud.findUsernames", async () => {
+    return this.read(async () => {
       if (playerIds.length === 0) return new Map<string, string>();
       const documents = await this.players
         .find({ _id: { $in: [...new Set(playerIds)] } }, { projection: { username: 1 } })
