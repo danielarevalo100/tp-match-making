@@ -11,8 +11,7 @@ export const sanctionTypes = [
 ] as const;
 export type SanctionType = (typeof sanctionTypes)[number];
 
-export const sanctionStatuses = ["active", "expired", "revoked"] as const;
-export type SanctionStatus = (typeof sanctionStatuses)[number];
+export type SanctionStatus = "active" | "expired" | "revoked";
 
 /**
  * Reversión de los resultados de las partidas en las que el jugador hizo trampa. La sanción se
@@ -22,15 +21,13 @@ export type SanctionStatus = (typeof sanctionStatuses)[number];
  *                  |
  *                  +-----> failed -> reverting (reintento o resume)
  */
-export const reversalStatuses = ["pending", "reverting", "completed", "failed"] as const;
-export type ReversalStatus = (typeof reversalStatuses)[number];
+export type ReversalStatus = "pending" | "reverting" | "completed" | "failed";
 
 /**
  * Pasos de la reversión que se anotan en el journal, en orden. Las partidas se anotan una por una
  * en `revertedMatchIds`, entre `hold` y `leaderboard`.
  */
-export const reversalSteps = ["queue", "hold", "leaderboard"] as const;
-export type ReversalStep = (typeof reversalSteps)[number];
+export type ReversalStep = "queue" | "hold" | "leaderboard";
 
 /** Un tablero de temporada y modo, y los jugadores de las partidas anuladas que tiene que retener. */
 export type HeldBoard = {

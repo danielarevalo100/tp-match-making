@@ -1,22 +1,13 @@
-export const matchLifecycleStatuses = ["in_progress", "closing", "closed", "voided"] as const;
-export type MatchLifecycleStatus = (typeof matchLifecycleStatuses)[number];
+export type MatchLifecycleStatus = "in_progress" | "closing" | "closed" | "voided";
 
-export const scoringStatuses = [
-  "not_started",
-  "pending",
-  "calculating",
-  "applied",
-  "failed",
-] as const;
-export type ScoringStatus = (typeof scoringStatuses)[number];
+export type ScoringStatus = "not_started" | "pending" | "calculating" | "applied" | "failed";
 
 /**
  * Publicación de los cambios de rating de la partida en el leaderboard de la temporada (problema
  * 5). Solo empieza cuando el scoring está `applied`, así un leaderboard nunca muestra un rating
  * que MongoDB o el marcador final todavía no tienen.
  */
-export const leaderboardStatuses = ["pending", "published", "not_ranked"] as const;
-export type LeaderboardStatus = (typeof leaderboardStatuses)[number];
+export type LeaderboardStatus = "pending" | "published" | "not_ranked";
 
 export const finishReasons = ["normal", "forfeit", "administrative"] as const;
 export type FinishReason = (typeof finishReasons)[number];

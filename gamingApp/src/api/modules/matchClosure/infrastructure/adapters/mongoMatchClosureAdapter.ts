@@ -23,7 +23,7 @@ type ClosureDocument = {
   id: string;
   reason: string;
   requestedAt: Date;
-  results: DeclaredPlayerResult[];
+  results: readonly DeclaredPlayerResult[];
   tsMs: number;
 };
 
@@ -31,10 +31,10 @@ type MatchClosureDocument = {
   _id: string;
   closure?: ClosureDocument;
   createdAt: Date;
-  finalScoreboard?: PlayerFinalScore[];
+  finalScoreboard?: readonly PlayerFinalScore[];
   leaderboard?: { status: Exclude<LeaderboardStatus, "pending">; updatedAt: Date };
   mode: string;
-  players: MatchParticipant[];
+  players: readonly MatchParticipant[];
   scoringAttempts?: number;
   scoringLastError?: string;
   scoringStatus?: ScoringStatus;
@@ -76,8 +76,8 @@ function toRecord(document: MatchClosureDocument): MatchClosureRecord {
     id: document._id,
     leaderboardStatus: document.leaderboard?.status ?? "pending",
     mode: document.mode,
-    players: document.players.map((player) => ({ ...player })),
-    results: document.closure?.results.map((result) => ({ ...result })) ?? null,
+    players: document.players,
+    results: document.closure?.results ?? null,
     scoringStatus: document.scoringStatus ?? "not_started",
     status: document.status,
   };
@@ -118,7 +118,7 @@ export class MongoMatchClosureAdapter
               id: input.closureId,
               reason: input.reason,
               requestedAt: new Date(),
-              results: input.results.map((result) => ({ ...result })),
+              results: input.results,
               tsMs: input.tsMs,
             },
             scoringStatus: "not_started",
@@ -200,7 +200,7 @@ export class MongoMatchClosureAdapter
         { _id: matchId, "closure.id": closureId, status: "closed" },
         {
           $set: {
-            finalScoreboard: scores.map((score) => ({ ...score })),
+            finalScoreboard: scores,
             scoringStatus: "applied",
             scoringUpdatedAt: at,
           },
