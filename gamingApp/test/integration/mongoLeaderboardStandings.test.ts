@@ -104,6 +104,11 @@ describe("MongoDB season standings (real MongoDB)", { skip: mongoUri === undefin
     assert.ok(seen.includes(playerId));
   });
 
+  it("knows whether a season and mode ranks anyone", async () => {
+    assert.equal(await leaderboard.hasStandings(season, mode), true);
+    assert.equal(await leaderboard.hasStandings("2001-S1", mode), false);
+  });
+
   it("reads the catalogs used to validate a board", async () => {
     assert.deepEqual(await leaderboard.findSeason(season), { id: season, status: "active" });
     assert.deepEqual(await leaderboard.findMode("casual_5v5"), { id: "casual_5v5", ranked: false });

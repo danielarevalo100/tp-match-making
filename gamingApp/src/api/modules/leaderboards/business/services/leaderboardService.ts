@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+
 import {
   leaderboardNeighbourCount,
   leaderboardTopSize,
@@ -13,6 +16,7 @@ import {
 } from "../models/leaderboard.js";
 import {
   LeaderboardNotFoundError,
+  LeaderboardRebuildInProgressError,
   ModeNotRankedError,
   PlayerNotRankedError,
 } from "../models/leaderboardErrors.js";
@@ -22,16 +26,30 @@ import type {
 } from "../ports/leaderboardPorts.js";
 
 const rebuildBatchSize = 500;
+/** The lock expires on its own if its rebuild dies; every batch pushes the expiry back. */
+const rebuildLockTtlMs = 60_000;
+
+/** How a reader that finds the board being reloaded waits for that reload. */
+export type LeaderboardReloadTiming = {
+  pollMs: number;
+  waitMs: number;
+};
+
+const defaultReloadTiming: LeaderboardReloadTiming = { pollMs: 100, waitMs: 10_000 };
 
 export class LeaderboardService {
   constructor(
     private readonly ranking: LeaderboardRankingPort,
     private readonly directory: LeaderboardDirectoryPort,
+    private readonly reloadTiming: LeaderboardReloadTiming = defaultReloadTiming,
   ) {}
 
   async top(board: LeaderboardBoard): Promise<LeaderboardTop> {
     const season = await this.assertBoard(board);
-    const slice = await this.ranking.top(board, leaderboardTopSize);
+    let slice = await this.ranking.top(board, leaderboardTopSize);
+    if (slice.totalPlayers === 0 && (await this.reloadIfLost(board))) {
+      slice = await this.ranking.top(board, leaderboardTopSize);
+    }
     const players = await this.directory.findPlayers(
       slice.entries.map((entry) => entry.playerId),
       board.seasonId,
@@ -45,7 +63,10 @@ export class LeaderboardService {
 
   async position(board: LeaderboardBoard, playerId: string): Promise<LeaderboardPosition> {
     const season = await this.assertBoard(board);
-    const window = await this.ranking.around(board, playerId, leaderboardNeighbourCount);
+    let window = await this.ranking.around(board, playerId, leaderboardNeighbourCount);
+    if (!window && (await this.reloadIfLost(board))) {
+      window = await this.ranking.around(board, playerId, leaderboardNeighbourCount);
+    }
     if (!window) throw new PlayerNotRankedError(playerId);
     const players = await this.directory.findPlayers(
       window.entries.map((entry) => entry.playerId),
@@ -66,15 +87,67 @@ export class LeaderboardService {
   /**
    * Recovery path: republishes every standing MongoDB holds for the season and mode, then removes
    * the Redis members MongoDB no longer ranks. Publishing is revision-guarded, so it can run while
-   * matches keep closing without regressing anyone.
+   * matches keep closing without regressing anyone. A lock in Redis keeps two rebuilds of the
+   * same board (from any instance) from running at once.
    */
   async rebuild(seasonId: string, mode: string): Promise<LeaderboardRebuildResult> {
     await this.assertBoard({ mode, region: null, seasonId });
+    const result = await this.rebuildLocked(seasonId, mode);
+    if (!result) throw new LeaderboardRebuildInProgressError(seasonId, mode);
+    return result;
+  }
 
+  /**
+   * Lazy recovery after Redis loses its data: a read that finds the board empty while MongoDB
+   * still ranks players rebuilds it before answering. Only the first reader rebuilds; the others
+   * wait for that rebuild. Returns whether the board was reloaded.
+   */
+  private async reloadIfLost(board: LeaderboardBoard): Promise<boolean> {
+    const { mode, seasonId } = board;
+    if ((await this.ranking.count(seasonId, mode)) > 0) return false;
+    if (!(await this.directory.hasStandings(seasonId, mode))) return false;
+    if (!(await this.rebuildLocked(seasonId, mode))) await this.waitForRebuild(seasonId, mode);
+    return true;
+  }
+
+  /** Rebuilds under the board's lock; null when another rebuild already holds it. */
+  private async rebuildLocked(
+    seasonId: string,
+    mode: string,
+  ): Promise<LeaderboardRebuildResult | null> {
+    const token = randomUUID();
+    if (!(await this.ranking.acquireRebuildLock(seasonId, mode, token, rebuildLockTtlMs))) {
+      return null;
+    }
+    try {
+      return await this.republish(seasonId, mode, token);
+    } finally {
+      // If freeing fails (Redis just went down) the lock expires on its own.
+      await this.ranking.releaseRebuildLock(seasonId, mode, token).catch(() => undefined);
+    }
+  }
+
+  private async waitForRebuild(seasonId: string, mode: string): Promise<void> {
+    const deadline = Date.now() + this.reloadTiming.waitMs;
+    while (await this.ranking.isRebuildLocked(seasonId, mode)) {
+      if (Date.now() >= deadline) throw new LeaderboardRebuildInProgressError(seasonId, mode);
+      await delay(this.reloadTiming.pollMs);
+    }
+  }
+
+  private async republish(
+    seasonId: string,
+    mode: string,
+    token: string,
+  ): Promise<LeaderboardRebuildResult> {
     const seen = new Set<string>();
     for await (const batch of this.directory.listStandings(seasonId, mode, rebuildBatchSize)) {
       await this.ranking.publish(seasonId, mode, batch);
       for (const standing of batch) seen.add(standing.playerId);
+      if (!(await this.ranking.extendRebuildLock(seasonId, mode, token, rebuildLockTtlMs))) {
+        // The lock expired and another rebuild took the board: leave the rest to it.
+        throw new LeaderboardRebuildInProgressError(seasonId, mode);
+      }
     }
 
     const unseen = (await this.ranking.listMembers(seasonId, mode)).filter((id) => !seen.has(id));

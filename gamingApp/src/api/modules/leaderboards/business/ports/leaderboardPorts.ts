@@ -17,6 +17,20 @@ export interface LeaderboardRankingPort {
   publish(seasonId: string, mode: string, standings: readonly LeaderboardStanding[]): Promise<void>;
   listMembers(seasonId: string, mode: string): Promise<string[]>;
   remove(seasonId: string, mode: string, playerIds: readonly string[]): Promise<number>;
+  /** Players in the global board of the season and mode. */
+  count(seasonId: string, mode: string): Promise<number>;
+  /** Takes the board's rebuild lock for `token`; false when another rebuild holds it. */
+  acquireRebuildLock(
+    seasonId: string,
+    mode: string,
+    token: string,
+    ttlMs: number,
+  ): Promise<boolean>;
+  /** Pushes the expiry back; false when `token` no longer holds the lock. */
+  extendRebuildLock(seasonId: string, mode: string, token: string, ttlMs: number): Promise<boolean>;
+  /** Frees the lock only if `token` still holds it. */
+  releaseRebuildLock(seasonId: string, mode: string, token: string): Promise<void>;
+  isRebuildLocked(seasonId: string, mode: string): Promise<boolean>;
 }
 
 /** Catalogs, profiles and the durable standings (MongoDB). */
@@ -34,6 +48,8 @@ export interface LeaderboardDirectoryPort {
     seasonId: string,
     mode: string,
   ): Promise<LeaderboardStanding[]>;
+  /** True when at least one player is ranked in the season and mode. */
+  hasStandings(seasonId: string, mode: string): Promise<boolean>;
   /** Every standing of the season and mode, in batches. */
   listStandings(
     seasonId: string,

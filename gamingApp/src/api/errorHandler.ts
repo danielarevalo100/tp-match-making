@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { InjectedFailureError, StorageError } from "../shared/errors.js";
 import {
   LeaderboardNotFoundError,
+  LeaderboardRebuildInProgressError,
   ModeNotRankedError,
   PlayerNotRankedError,
 } from "./modules/leaderboards/business/models/leaderboardErrors.js";
@@ -184,6 +185,16 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
       id: error.id,
       message: error.message,
       missing: error.missing,
+    });
+    return;
+  }
+
+  if (error instanceof LeaderboardRebuildInProgressError) {
+    response.status(409).json({
+      error: "LEADERBOARD_REBUILD_IN_PROGRESS",
+      message: error.message,
+      mode: error.mode,
+      seasonId: error.seasonId,
     });
     return;
   }

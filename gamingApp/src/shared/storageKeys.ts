@@ -25,6 +25,9 @@ export const redisKeys = {
   leaderboardRegional: (seasonId: string, mode: string, region: string): string =>
     `lb:${seasonId}:${mode}:region:${region}`,
   leaderboardMembers: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:members`,
+  /** Token of the rebuild that owns the board; expires on its own if that rebuild dies. */
+  leaderboardRebuildLock: (seasonId: string, mode: string): string =>
+    `lb:${seasonId}:${mode}:rebuild_lock`,
   /** Problem 8: `{holdId}|{playerId}` for every player a sanction reversal holds in this board. */
   leaderboardHolds: (seasonId: string, mode: string): string => `lb:${seasonId}:${mode}:holds`,
   /** Problem 8: playerId -> number of reversals holding it; a held player is not published. */

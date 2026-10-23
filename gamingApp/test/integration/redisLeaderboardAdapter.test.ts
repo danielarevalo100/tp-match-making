@@ -94,4 +94,33 @@ describe("RedisLeaderboardAdapter (real Redis)", { skip: redisUrl === undefined 
     assert.equal(await leaderboard.around({ mode, region: "EU", seasonId }, playerId, 0), null);
     assert.equal((await leaderboard.listMembers(seasonId, mode)).includes(playerId), false);
   });
+
+  it("counts the players of the global board", async () => {
+    assert.equal(await leaderboard.count(seasonId, mode), 29);
+    assert.equal(await leaderboard.count(seasonId, "ranked_5v5"), 0);
+  });
+
+  it("lets only the token that took the rebuild lock extend or free it", async () => {
+    assert.equal(await leaderboard.acquireRebuildLock(seasonId, mode, "first", 5_000), true);
+    assert.equal(await leaderboard.acquireRebuildLock(seasonId, mode, "second", 5_000), false);
+    assert.equal(await leaderboard.isRebuildLocked(seasonId, mode), true);
+
+    assert.equal(await leaderboard.extendRebuildLock(seasonId, mode, "second", 5_000), false);
+    assert.equal(await leaderboard.extendRebuildLock(seasonId, mode, "first", 5_000), true);
+
+    await leaderboard.releaseRebuildLock(seasonId, mode, "second");
+    assert.equal(await leaderboard.isRebuildLocked(seasonId, mode), true);
+    await leaderboard.releaseRebuildLock(seasonId, mode, "first");
+    assert.equal(await leaderboard.isRebuildLocked(seasonId, mode), false);
+  });
+
+  it("expires a rebuild lock whose holder never frees it", async () => {
+    assert.equal(await leaderboard.acquireRebuildLock(seasonId, mode, "crashed", 50), true);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    assert.equal(await leaderboard.isRebuildLocked(seasonId, mode), false);
+    assert.equal(await leaderboard.extendRebuildLock(seasonId, mode, "crashed", 5_000), false);
+    assert.equal(await leaderboard.acquireRebuildLock(seasonId, mode, "next", 5_000), true);
+    await leaderboard.releaseRebuildLock(seasonId, mode, "next");
+  });
 });

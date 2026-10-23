@@ -19,6 +19,8 @@ import {
 const season = "2026-S2";
 const mode = "ranked_1v1";
 const regions = ["NA", "LATAM", "EU"] as const;
+/** Key of the season and mode in the in-memory ranking (its rebuild lock, boards...). */
+const boardKey = `${season}|${mode}`;
 
 /** Deterministic ids so ties between equal ratings have a known order. */
 function playerId(index: number): string {
@@ -175,6 +177,135 @@ describe("LeaderboardService", () => {
     assert.equal(top.totalPlayers, 150);
     assert.equal(top.entries[0]?.playerId, playerId(0));
   });
+
+  it("rejects a rebuild while another one holds the board's lock", async () => {
+    context.ranking.rebuildLocks.set(boardKey, "another-instance");
+
+    await assert.rejects(context.service.rebuild(season, mode), {
+      name: "LeaderboardRebuildInProgressError",
+    });
+    assert.equal(context.ranking.rebuildLocks.get(boardKey), "another-instance");
+
+    context.ranking.rebuildLocks.delete(boardKey);
+    assert.equal((await context.service.rebuild(season, mode)).published, 150);
+    assert.equal(context.ranking.rebuildLocks.size, 0);
+  });
+
+  it("stops a rebuild whose lock another rebuild took over", async () => {
+    const publish = context.ranking.publish.bind(context.ranking);
+    context.ranking.publish = async (...args) => {
+      await publish(...args);
+      // The lock expired mid-rebuild and another instance took it.
+      context.ranking.rebuildLocks.set(boardKey, "another-instance");
+    };
+
+    await assert.rejects(context.service.rebuild(season, mode), {
+      name: "LeaderboardRebuildInProgressError",
+    });
+    assert.equal(context.ranking.rebuildLocks.get(boardKey), "another-instance");
+  });
+});
+
+describe("LeaderboardService lazy reload", () => {
+  let context = build();
+  beforeEach(async () => {
+    context = build();
+    await context.ranking.publish(season, mode, context.standings);
+    // Redis came back empty: MongoDB still ranks the 150 players.
+    context.ranking.boards.clear();
+    context.ranking.publications = 0;
+  });
+
+  it("reloads an empty board from MongoDB on the first read", async () => {
+    const top = await context.service.top({ mode, region: null, seasonId: season });
+
+    assert.equal(top.totalPlayers, 150);
+    assert.equal(top.entries[0]?.playerId, playerId(0));
+    assert.equal(context.ranking.publications, 1);
+    assert.equal(context.ranking.rebuildLocks.size, 0);
+
+    await context.service.top({ mode, region: null, seasonId: season });
+    assert.equal(context.ranking.publications, 1);
+  });
+
+  it("reloads before answering a position or a regional board", async () => {
+    const position = await context.service.position(
+      { mode, region: null, seasonId: season },
+      playerId(10),
+    );
+    assert.equal(position.player.position, 11);
+
+    context.ranking.boards.clear();
+    const regional = await context.service.top({ mode, region: "EU", seasonId: season });
+    assert.equal(regional.totalPlayers, 50);
+  });
+
+  it("leaves the board alone when MongoDB ranks nobody either", async () => {
+    context.directory.players.clear();
+
+    const top = await context.service.top({ mode, region: null, seasonId: season });
+
+    assert.equal(top.totalPlayers, 0);
+    assert.equal(context.ranking.publications, 0);
+  });
+
+  it("does not reload a board that still has players", async () => {
+    await context.ranking.publish(season, mode, context.standings);
+    context.ranking.publications = 0;
+
+    await assert.rejects(
+      context.service.position({ mode, region: null, seasonId: season }, playerId(500)),
+      { name: "PlayerNotRankedError" },
+    );
+    assert.equal(context.ranking.publications, 0);
+  });
+
+  it("rebuilds once when several readers find the board empty at the same time", async () => {
+    const service = new LeaderboardService(context.ranking, context.directory, {
+      pollMs: 5,
+      waitMs: 1_000,
+    });
+
+    const tops = await Promise.all(
+      Array.from({ length: 5 }, () => service.top({ mode, region: null, seasonId: season })),
+    );
+
+    assert.deepEqual(
+      tops.map((top) => top.totalPlayers),
+      [150, 150, 150, 150, 150],
+    );
+    assert.equal(context.ranking.publications, 1);
+  });
+
+  it("waits for a reload another instance is running", async () => {
+    const service = new LeaderboardService(context.ranking, context.directory, {
+      pollMs: 5,
+      waitMs: 1_000,
+    });
+    context.ranking.rebuildLocks.set(boardKey, "another-instance");
+    setTimeout(() => {
+      void context.ranking.publish(season, mode, context.standings).then(() => {
+        context.ranking.rebuildLocks.delete(boardKey);
+      });
+    }, 30);
+
+    const top = await service.top({ mode, region: null, seasonId: season });
+
+    assert.equal(top.totalPlayers, 150);
+    assert.equal(context.ranking.publications, 1);
+  });
+
+  it("gives up when the other reload takes too long", async () => {
+    const service = new LeaderboardService(context.ranking, context.directory, {
+      pollMs: 5,
+      waitMs: 30,
+    });
+    context.ranking.rebuildLocks.set(boardKey, "another-instance");
+
+    await assert.rejects(service.top({ mode, region: null, seasonId: season }), {
+      name: "LeaderboardRebuildInProgressError",
+    });
+  });
 });
 
 describe("leaderboards API", () => {
@@ -238,5 +369,23 @@ describe("leaderboards API", () => {
 
     assert.equal(response.status, 200);
     assert.equal((response.body as { published: number }).published, 150);
+  });
+
+  it("answers 409 while the board is being rebuilt", async () => {
+    context.ranking.rebuildLocks.set(boardKey, "another-instance");
+
+    const response = await request(context.app).post(`/leaderboards/${mode}/${season}/rebuild`);
+
+    assert.equal(response.status, 409);
+    assert.equal((response.body as { error: string }).error, "LEADERBOARD_REBUILD_IN_PROGRESS");
+  });
+
+  it("frees the rebuild lock when the rebuild fails", async () => {
+    const failed = await request(context.app)
+      .post(`/leaderboards/${mode}/${season}/rebuild`)
+      .set("x-fail-at", "leaderboard.publish");
+
+    assert.equal(failed.status, 500);
+    assert.equal(context.ranking.rebuildLocks.size, 0);
   });
 });

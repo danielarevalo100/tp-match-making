@@ -13,8 +13,10 @@ import type {
 import type { LeaderboardRankingPort } from "../../business/ports/leaderboardPorts.js";
 import {
   aroundScript,
+  extendLockScript,
   holdScript,
   publishScript,
+  releaseLockScript,
   releaseScript,
   removeScript,
   topScript,
@@ -149,6 +151,65 @@ export class RedisLeaderboardAdapter
         );
       }
       return removed;
+    });
+  }
+
+  count(seasonId: string, mode: string): Promise<number> {
+    return this.run("leaderboard.count", () =>
+      this.redis.zcard(redisKeys.leaderboardGlobal(seasonId, mode)),
+    );
+  }
+
+  acquireRebuildLock(
+    seasonId: string,
+    mode: string,
+    token: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    return this.run("leaderboard.acquireRebuildLock", async () => {
+      const reply = await this.redis.set(
+        redisKeys.leaderboardRebuildLock(seasonId, mode),
+        token,
+        "PX",
+        ttlMs,
+        "NX",
+      );
+      return reply === "OK";
+    });
+  }
+
+  extendRebuildLock(
+    seasonId: string,
+    mode: string,
+    token: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    return this.run("leaderboard.extendRebuildLock", async () => {
+      const reply = await this.redis.eval(
+        extendLockScript,
+        1,
+        redisKeys.leaderboardRebuildLock(seasonId, mode),
+        token,
+        String(ttlMs),
+      );
+      return Number(reply) === 1;
+    });
+  }
+
+  releaseRebuildLock(seasonId: string, mode: string, token: string): Promise<void> {
+    return this.run("leaderboard.releaseRebuildLock", async () => {
+      await this.redis.eval(
+        releaseLockScript,
+        1,
+        redisKeys.leaderboardRebuildLock(seasonId, mode),
+        token,
+      );
+    });
+  }
+
+  isRebuildLocked(seasonId: string, mode: string): Promise<boolean> {
+    return this.run("leaderboard.isRebuildLocked", async () => {
+      return (await this.redis.exists(redisKeys.leaderboardRebuildLock(seasonId, mode))) === 1;
     });
   }
 

@@ -43,6 +43,8 @@ export class InMemoryLeaderboardRanking
   readonly held = new Map<string, Map<string, number>>();
   /** Revision of players a reversal removed (the Redis tombstone), by board. */
   readonly tombstones = new Map<string, Map<string, number>>();
+  /** Rebuild lock token by board; tests drop an entry to simulate its expiry. */
+  readonly rebuildLocks = new Map<string, string>();
   publications = 0;
   releases = 0;
 
@@ -95,6 +97,32 @@ export class InMemoryLeaderboardRanking
       this.tombstones.get(key)?.delete(playerId);
       return board.delete(playerId);
     }).length;
+  }
+
+  async count(seasonId: string, mode: string): Promise<number> {
+    failIfRequested("leaderboard.count");
+    return this.board(seasonId, mode).size;
+  }
+
+  async acquireRebuildLock(seasonId: string, mode: string, token: string): Promise<boolean> {
+    failIfRequested("leaderboard.acquireRebuildLock");
+    const key = `${seasonId}|${mode}`;
+    if (this.rebuildLocks.has(key)) return false;
+    this.rebuildLocks.set(key, token);
+    return true;
+  }
+
+  async extendRebuildLock(seasonId: string, mode: string, token: string): Promise<boolean> {
+    return this.rebuildLocks.get(`${seasonId}|${mode}`) === token;
+  }
+
+  async releaseRebuildLock(seasonId: string, mode: string, token: string): Promise<void> {
+    const key = `${seasonId}|${mode}`;
+    if (this.rebuildLocks.get(key) === token) this.rebuildLocks.delete(key);
+  }
+
+  async isRebuildLocked(seasonId: string, mode: string): Promise<boolean> {
+    return this.rebuildLocks.has(`${seasonId}|${mode}`);
   }
 
   async hold(
@@ -279,6 +307,11 @@ export class InMemoryLeaderboardDirectory implements LeaderboardDirectoryPort {
     mode: string,
   ): Promise<LeaderboardStanding[]> {
     return playerIds.flatMap((playerId) => this.standing(playerId, seasonId, mode) ?? []);
+  }
+
+  async hasStandings(seasonId: string, mode: string): Promise<boolean> {
+    failIfRequested("leaderboard.hasStandings");
+    return [...this.players.keys()].some((playerId) => this.standing(playerId, seasonId, mode));
   }
 
   async *listStandings(

@@ -74,6 +74,22 @@ end
 return removed
 `;
 
+// KEYS: rebuild lock. ARGV: token, ttl in milliseconds.
+// Only the rebuild that took the lock can extend it: a rebuild whose lock expired and was taken by
+// another one gets 0 and must stop.
+export const extendLockScript = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`;
+
+// KEYS: rebuild lock. ARGV: token.
+// Compare and delete in one step, so a rebuild never frees a lock another rebuild holds.
+export const releaseLockScript = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+return redis.call('DEL', KEYS[1])
+`;
+
 // Problem 8, before any rating is reverted.
 // KEYS: holds set ("holdId|playerId"), held hash (playerId -> number of holds).
 // ARGV: holdId, then the player ids to hold.

@@ -129,6 +129,13 @@ export class MongoLeaderboardAdapter extends BaseMongoAdapter implements Leaderb
     });
   }
 
+  hasStandings(seasonId: string, mode: string): Promise<boolean> {
+    return this.run("leaderboard.hasStandings", async () => {
+      const filter = { [`${standingPath(seasonId, mode)}.gamesPlayed`]: { $gte: 1 } };
+      return (await this.players.countDocuments(filter, { limit: 1 })) > 0;
+    });
+  }
+
   async *listStandings(
     seasonId: string,
     mode: string,

@@ -43,6 +43,7 @@ Redis holds live state only; MongoDB stays the source of truth. `{playerId}` is 
 | `lb:{seasonId}:{mode}:global` | ZSET | Season leaderboard: `playerId` scored by MMR. Position = `ZREVRANK` + 1 (equal MMR ordered by descending `playerId`). | problem 4 (publish after scoring), problem 5 rebuild | none |
 | `lb:{seasonId}:{mode}:region:{region}` | ZSET | Same board restricted to one region. | problem 4, problem 5 rebuild | none |
 | `lb:{seasonId}:{mode}:members` | HASH | `playerId` → `"{revision}\|{region}"`: last published revision (older publications are ignored) and the regional board that holds the player (a region change moves them). `"{revision}\|"` (empty region) is the tombstone problem 8 leaves for a player it removed. | problem 4, problem 5 rebuild, problem 8 | none |
+| `lb:{seasonId}:{mode}:rebuild_lock` | STRING | Token (UUID) of the rebuild that owns the board. Taken with `SET NX PX`; extended and freed by Lua only if the token matches. Keeps two rebuilds of one board (problem 5 manual rebuild or lazy reload, any instance) from running at once. | problem 5 rebuild | 60 seconds, extended after every batch |
 | `lb:{seasonId}:{mode}:holds` | SET | `{sanctionId}\|{playerId}` for each player a sanction reversal holds in this board. Makes the hold idempotent. | problem 8 (hold and release) | removed on release |
 | `lb:{seasonId}:{mode}:held` | HASH | `playerId` → number of reversals holding it. While it is present, publications (problem 4) and rebuild removals (problem 5) skip the player. | problem 8 | field removed when the count reaches 0 |
 

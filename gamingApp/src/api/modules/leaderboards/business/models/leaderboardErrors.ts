@@ -17,6 +17,16 @@ export class ModeNotRankedError extends Error {
   }
 }
 
+export class LeaderboardRebuildInProgressError extends Error {
+  constructor(
+    readonly seasonId: string,
+    readonly mode: string,
+  ) {
+    super(`The ${mode} leaderboard of season ${seasonId} is being rebuilt; retry shortly.`);
+    this.name = "LeaderboardRebuildInProgressError";
+  }
+}
+
 export class PlayerNotRankedError extends Error {
   constructor(readonly playerId: string) {
     super(`Player ${playerId} is not ranked in this leaderboard.`);

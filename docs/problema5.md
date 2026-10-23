@@ -43,6 +43,8 @@ Trazabilidad de un jugador: con su `playerId` se lee el registro durable en Mong
    - posición: `ZREVRANK` y `ZREVRANGE rank-5 rank+5 WITHSCORES` + `ZCARD`, juntos, para que la posición y los vecinos describan el mismo instante aunque una partida cierre entre ambos comandos.
 3. **Mongo:** `find({_id: {$in: ids}})` con proyección de `username`, `country` y el registro de la temporada (≤ 100 lecturas por `_id`).
 
+Si el paso 2 vuelve vacío (top sin jugadores, o el jugador no está en el tablero), antes de responder se aplica el [lazy loading](#lazy-loading-cuando-redis-pierde-los-datos).
+
 ### Posición y empates
 
 La posición es **ordinal**: 1, 2, 3… sin repetir. Ante igual MMR, Redis ordena por `playerId` en orden lexicográfico descendente. El orden es estable y determinista, aunque arbitrario. La demo verifica la posición contra un conteo independiente en Mongo con ese mismo criterio de desempate.
@@ -84,6 +86,31 @@ Todos los jugadores de una partida se publican en una sola invocación Lua, así
 
 Publica sobre los tableros vivos (sin `RENAME`), así que se puede ejecutar mientras siguen cerrando partidas: el control por `revision` impide retroceder. Sirve para recuperar Redis después de una pérdida de datos y para reparar un `leaderboardStatus=pending`. Recorre todos los jugadores de la temporada y el modo; no es una operación por jugador.
 
+### Lock de reconstrucción
+
+Dos reconstrucciones del mismo tablero en paralelo no rompen nada (todo es idempotente), pero duplican el trabajo. Un lock en Redis lo evita, también entre varias instancias de la app:
+
+- **Tomar:** `SET lb:{season}:{mode}:rebuild_lock <token> PX 60000 NX`. El `token` es un UUID por reconstrucción. Si la clave ya existe, el `POST .../rebuild` responde `409 LEADERBOARD_REBUILD_IN_PROGRESS`.
+- **Renovar:** después de cada lote, un script Lua extiende el TTL **solo si el token sigue siendo el mismo**. Una reconstrucción larga no pierde el lock; si lo perdió (expiró y otra lo tomó), se detiene y deja el resto a la otra.
+- **Liberar:** al terminar, con o sin error, un script Lua borra la clave **solo si el token coincide**, para no liberar el lock de otra reconstrucción.
+- **TTL:** si la instancia muere a mitad de camino, el lock vence solo a los 60 s y otra puede retomar. Como la reconstrucción es idempotente, empezar de nuevo no deja nada inconsistente.
+
+### Lazy loading cuando Redis pierde los datos
+
+Si Redis se reinicia sin datos (se borró el volumen, se restauró un backup vacío), la primera consulta que lo note recarga el tablero desde Mongo antes de responder:
+
+1. Una consulta (top o posición) vuelve vacía de Redis.
+2. `ZCARD lb:{season}:{mode}:global`: si el tablero global tiene jugadores, no se perdió nada y la respuesta vacía es correcta (región sin jugadores, jugador sin partidas).
+3. `countDocuments(..., { limit: 1 })` en Mongo: si Mongo tampoco tiene registros (temporada nueva), no hay nada que recargar.
+4. Si Redis está vacío y Mongo no, se reconstruye con el lock de arriba y se vuelve a leer.
+5. Las consultas que llegan mientras otra recarga el tablero no lo reconstruyen de nuevo: esperan (sondeando el lock cada 100 ms, hasta 10 s) y después leen. Si se vence la espera responden `409 LEADERBOARD_REBUILD_IN_PROGRESS`.
+
+El costo en el camino normal es nulo: los pasos 2 a 5 solo corren cuando Redis ya respondió vacío.
+
+Qué **no** detecta: una pérdida parcial (Redis con algunos jugadores) o un MMR desactualizado. Esos casos siguen requiriendo `POST .../rebuild`.
+
+Redis sigue siendo el dueño del ranking. La recarga no es un *cache-aside* por clave: se dispara solo cuando Redis perdió el tablero entero, y reconstruye todo el tablero, porque la posición de un jugador depende de todos los demás.
+
 ## Modelo de datos
 
 ### Mongo — `players.seasonRatings` (`infra/mongo/init.js`, `schema_metadata` v6)
@@ -103,6 +130,7 @@ players.seasonRatings.<seasonId>.<modeId> = { mmr, gamesPlayed, region, revision
 | `lb:{season}:{mode}:global` | ZSET | `playerId` → MMR |
 | `lb:{season}:{mode}:region:{region}` | ZSET | `playerId` → MMR, solo de esa región |
 | `lb:{season}:{mode}:members` | HASH | `playerId` → `"{revision}\|{region}"`: tablero regional actual y última revisión publicada |
+| `lb:{season}:{mode}:rebuild_lock` | STRING | Token de la reconstrucción en curso. TTL de 60 s, renovado en cada lote |
 
 El hash `members` permite que un cambio de región **mueva** al jugador (`ZREM` del regional viejo y `ZADD` en el nuevo) en lugar de duplicarlo. El script arma la clave regional anterior a partir del prefijo; en un único nodo Redis funciona, pero en un cluster haría falta usar hash tags.
 
@@ -151,6 +179,7 @@ Ejemplo de posición (resumido):
 | Temporada, modo o región inexistente | 404 | `LEADERBOARD_NOT_FOUND` (`missing`: `season`/`mode`/`region`) |
 | Modo sin ranking (`casual_5v5`) | 422 | `MODE_NOT_RANKED` |
 | Jugador sin posición en ese tablero | 404 | `PLAYER_NOT_RANKED` |
+| Otra reconstrucción del tablero en curso (o una consulta que esperó la recarga más de 10 s) | 409 | `LEADERBOARD_REBUILD_IN_PROGRESS` |
 | Parámetros inválidos | 400 | `VALIDATION_ERROR` |
 | Redis o Mongo caído | 503 | `STORAGE_ERROR` |
 
@@ -160,7 +189,9 @@ Ejemplo de posición (resumido):
 leaderboard.findSeason      leaderboard.findMode       leaderboard.findRegion
 leaderboard.top             leaderboard.around         leaderboard.findPlayers
 leaderboard.publish         leaderboard.listStandings  leaderboard.findStandings
-leaderboard.listMembers     leaderboard.remove
+leaderboard.listMembers     leaderboard.remove         leaderboard.count
+leaderboard.hasStandings    leaderboard.acquireRebuildLock
+leaderboard.extendRebuildLock  leaderboard.releaseRebuildLock  leaderboard.isRebuildLocked
 matchClosure.findLeaderboardSeason  matchClosure.findStandings  matchClosure.markLeaderboard
 ```
 
@@ -196,9 +227,9 @@ Con 32 consultas en vuelo, la latencia corresponde a la espera en la cola de un 
 
 ## Pruebas
 
-- Servicio y API con fakes: `gamingApp/test/unit/modules/leaderboards/leaderboards.test.ts` (top, regional, ventana y bordes, empates, errores, rebuild).
+- Servicio y API con fakes: `gamingApp/test/unit/modules/leaderboards/leaderboards.test.ts` (top, regional, ventana y bordes, empates, errores, rebuild, lock de reconstrucción y lazy loading con lectores concurrentes).
 - P4 con leaderboard: `gamingApp/test/unit/modules/matchClosure/matchClosure.test.ts`. Cubre: publicación después del final scoreboard; nada se publica si falla `completeScoring`; publicación fallida reintentada sin reaplicar rating; un reintento tardío que no pisa una revisión nueva; modo o temporada sin ranking.
-- Lua con Redis real: `gamingApp/test/integration/redisLeaderboardAdapter.test.ts` (`REDIS_URL`).
+- Lua con Redis real: `gamingApp/test/integration/redisLeaderboardAdapter.test.ts` (`REDIS_URL`), incluido el lock: solo el token dueño lo renueva o libera, y vence solo.
 - Pipeline de Mongo contra los validadores reales: `gamingApp/test/integration/mongoLeaderboardStandings.test.ts` (`MONGODB_URI`, requiere `infra/mongo/init.js` aplicado).
 
 ## Limitaciones conocidas
