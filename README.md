@@ -76,3 +76,9 @@ See [the infrastructure guide](docs/infrastructure.md) for health checks, connec
 ## Application layer
 
 The application layer lives in [`gamingApp`](gamingApp/), a single Node.js and TypeScript REST API organized in feature modules under `src/api/modules`. It is available at `http://localhost:3001` when the full Compose stack is running. Its README covers the folder layout, local development, validation and fault injection.
+
+## Demo console
+
+`consola.cmd` (or `node scripts/consola.mjs`) opens an interactive menu for presenting the project. It asks for data (username, country, game mode, event type, match results), sends it to the API, and then reads each engine directly to show where every piece ended up: for example, one match event written to Cassandra and to the Redis scoreboard at the same time, with an optional injected failure between both writes and its repair. Option 9 runs the whole flow step by step.
+
+It needs the full Compose stack running with the schema applied, and the `gamingApp` dependencies installed (`pnpm install` inside `gamingApp`), because it borrows the app's database drivers.
