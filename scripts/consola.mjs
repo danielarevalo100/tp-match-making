@@ -308,12 +308,44 @@ const renderMatch = (match) =>
   `${bold(short(match.matchId))} ${match.mode}/${match.region} ` +
   `${dim(`${match.players.length} jugadores, ${match.closed ? "cerrada" : "en curso"}`)}`;
 
-async function pickPlayer(question = "Jugador") {
-  if (session.players.length === 0) {
-    errMsg("Todavía no registraste jugadores en esta sesión (opción 1).");
+// Players registered in an earlier run only live in MongoDB; they join the session when looked up by name.
+async function loadPlayer(username) {
+  const known = session.players.find((player) => player.username === username);
+  if (known) return known;
+  if (!mongoDb) {
+    errMsg("MongoDB no está disponible para buscar el jugador.");
     return null;
   }
-  return choose(question, session.players, renderPlayer);
+  const doc = await mongo("players").findOne({ username }, { projection: { country: 1, region: 1, username: 1 } });
+  if (!doc) {
+    errMsg(`No existe el jugador "${username}" en MongoDB. Registralo con la opción 1.`);
+    return null;
+  }
+  const player = { country: doc.country, id: doc._id, region: doc.region, username: doc.username };
+  session.players.push(player);
+  okMsg(`Jugador ${player.username} encontrado en MongoDB (id ${player.id}).`);
+  return player;
+}
+
+async function pickPlayer(question = "Jugador") {
+  session.players.forEach((player, index) => console.log(`     ${bold(String(index + 1))}) ${renderPlayer(player)}`));
+  const hint = session.players.length > 0 ? "número de la lista o nombre de usuario" : "nombre de usuario";
+  while (true) {
+    const answer = (await ask(`${question} (${hint})`, session.players.length > 0 ? 1 : undefined)).toLowerCase();
+    if (!answer) {
+      errMsg("Escribí un nombre de usuario.");
+      continue;
+    }
+    if (/^\d+$/.test(answer)) {
+      const player = session.players[Number(answer) - 1];
+      if (player) return player;
+      if (session.players.length > 0) {
+        errMsg(`Elegí un número entre 1 y ${session.players.length}, o escribí un nombre de usuario.`);
+        continue;
+      }
+    }
+    return loadPlayer(answer);
+  }
 }
 
 async function pickMatch(onlyLive) {
