@@ -1,31 +1,48 @@
 /**
- * Test data for problems 6 and 7 (player history and irregular behavior).
+ * Test data for the eight problems.
  *
- *   pnpm seed:history
+ *   pnpm seed          load (idempotent: running it again does not duplicate anything)
+ *   pnpm seed:reset    empty the four engines first, then load: always the same starting point
  *
- * MongoDB is the source of truth: it gets players, closed matches (with the final scoreboard that
- * problem 4 would have written) and reports. Then the same projection services the API exposes
- * (POST /history/projection and POST /fraud/projection) load Cassandra and Neo4j from it.
- * Everything has a deterministic id, so running it again does not duplicate anything.
+ * MongoDB is the source of truth: it gets administrators, players (with their rating and their
+ * standing in the active season, as problem 4 leaves them), closed matches (with the final
+ * scoreboard) and reports. Then the same services the API exposes load the other engines from it:
+ * the history projection (Cassandra), the graph projection (Neo4j) and the leaderboard rebuild
+ * (Redis). Everything has a deterministic id.
  *
- * Environment: SEED_PLAYERS (2000), SEED_MATCHES (50000), SEED_REPORTS (300), SEED_NOW (ISO date).
- * Needs the same variables as the application (see .env.example) and the schema applied.
+ * What each problem finds afterwards:
+ *   1-2  2,000 active players with a ranked_1v1 rating, none in a queue or a match.
+ *   3-4  same players: matches formed from the queue get events and are closed on top of this.
+ *   5    one leaderboard per region plus the global one for the active season.
+ *   6    50,000 matches -> 100,000 history rows; 7: the planted cases in docs/problema7.md.
+ *   8    administrators, a reported player and closed, scored matches that can be voided.
+ *
+ * Environment: SEED_PLAYERS (2000), SEED_MATCHES (50000), SEED_REPORTS (300), SEED_NOW (ISO date),
+ * SEED_RESET (1 = same as --reset). Needs the same variables as the application (see
+ * .env.example) and the schema applied.
  */
 import { createHash } from "node:crypto";
 
-import type { Collection } from "mongodb";
+import type { Redis } from "ioredis";
+import type { Client } from "cassandra-driver";
+import type { Collection, Db } from "mongodb";
 
-import { PlayerHistoryProjectionService } from "../api/modules/playerHistory/business/services/playerHistoryProjectionService.js";
 import { FraudGraphProjectionService } from "../api/modules/fraudDetection/business/services/fraudGraphProjectionService.js";
 import { Neo4jMatchGraphAdapter } from "../api/modules/fraudDetection/infrastructure/adapters/neo4jMatchGraphAdapter.js";
+import { LeaderboardService } from "../api/modules/leaderboards/business/services/leaderboardService.js";
+import { MongoLeaderboardAdapter } from "../api/modules/leaderboards/infrastructure/adapters/mongoLeaderboardAdapter.js";
+import { RedisLeaderboardAdapter } from "../api/modules/leaderboards/infrastructure/adapters/redisLeaderboardAdapter.js";
+import { PlayerHistoryProjectionService } from "../api/modules/playerHistory/business/services/playerHistoryProjectionService.js";
 import { CassandraPlayerHistoryAdapter } from "../api/modules/playerHistory/infrastructure/adapters/cassandraPlayerHistoryAdapter.js";
 import { MongoClosedMatchAdapter } from "../api/modules/playerHistory/infrastructure/adapters/mongoClosedMatchAdapter.js";
 import { loadConfig } from "../config.js";
 import { connectToCassandra } from "../infrastructure/cassandra/cassandraConnection.js";
 import { connectToMongo } from "../infrastructure/mongo/mongoConnection.js";
+import type { Neo4jConnection } from "../infrastructure/neo4j/neo4jConnection.js";
 import { connectToNeo4j } from "../infrastructure/neo4j/neo4jConnection.js";
+import { connectToRedis } from "../infrastructure/redis/redisConnection.js";
 import { hashPassword } from "../shared/password.js";
-import { mongoCollections } from "../shared/storageKeys.js";
+import { cassandraTables, mongoCollections } from "../shared/storageKeys.js";
 
 const mode = "ranked_1v1";
 const dayMs = 86_400_000;
@@ -43,6 +60,14 @@ const countries = [
   ["JP", "ASIA"],
 ] as const;
 const reportReasons = ["cheating", "match_fixing", "toxicity", "griefing", "afk"] as const;
+// Catalogs (regions, game modes, seasons) belong to the schema script and survive a reset.
+const domainCollections = [
+  mongoCollections.administrators,
+  mongoCollections.matches,
+  mongoCollections.players,
+  mongoCollections.reports,
+  mongoCollections.sanctions,
+] as const;
 
 // mulberry32: small seeded generator, so the same seed gives the same data.
 function createRandom(seed: number): () => number {
@@ -74,7 +99,8 @@ function intFromEnv(name: string, fallback: number): number {
 
 type Fixture = { a: number; at: number; b: number; outcome: "a" | "b" | "draw" | null };
 
-type Rating = { games: number; mmr: number };
+/** `season*` only counts the matches of the active season, as problem 4 does. */
+type Rating = { applied: string[]; games: number; mmr: number; seasonGames: number };
 
 async function upsertAll(
   collection: Collection<{ _id: string }>,
@@ -93,11 +119,42 @@ async function upsertAll(
   }
 }
 
+/** Leaves every engine as the schema scripts leave it: catalogs, tables and constraints only. */
+async function reset(
+  database: Db,
+  redis: Redis,
+  cassandra: Client,
+  neo4j: Neo4jConnection,
+): Promise<void> {
+  console.log("Emptying the engines...");
+  for (const name of domainCollections) {
+    const { deletedCount } = await database.collection(name).deleteMany({});
+    console.log(`  MongoDB   ${name}: ${String(deletedCount)} documents deleted`);
+  }
+  await redis.flushdb();
+  console.log("  Redis     FLUSHDB (queues, live matches, leaderboards)");
+  for (const table of Object.values(cassandraTables)) {
+    await cassandra.execute(`TRUNCATE ${table}`);
+    console.log(`  Cassandra TRUNCATE ${table}`);
+  }
+  // In batches: a single transaction with every node and relationship would not fit in memory.
+  const session = neo4j.driver.session({ database: neo4j.database });
+  try {
+    await session.run(
+      "MATCH (node) CALL { WITH node DETACH DELETE node } IN TRANSACTIONS OF 10000 ROWS",
+    );
+  } finally {
+    await session.close();
+  }
+  console.log("  Neo4j     every node and relationship deleted\n");
+}
+
 async function main(): Promise<void> {
   const playerCount = intFromEnv("SEED_PLAYERS", 2_000);
   const matchCount = intFromEnv("SEED_MATCHES", 50_000);
   const reportCount = intFromEnv("SEED_REPORTS", 300);
   if (playerCount < 150) throw new Error("SEED_PLAYERS must be at least 150.");
+  const resetFirst = process.argv.includes("--reset") || process.env["SEED_RESET"] === "1";
   const now = new Date(process.env["SEED_NOW"] ?? Date.now()).getTime();
   const random = createRandom(20_260_620);
   const between = (min: number, max: number): number =>
@@ -127,8 +184,31 @@ async function main(): Promise<void> {
     uri: config.neo4jUri,
     username: config.neo4jUsername,
   });
+  const redis = await connectToRedis({
+    attempts: config.redisConnectRetries,
+    delayMs: config.redisRetryDelayMs,
+    url: config.redisUrl,
+  });
 
   try {
+    const database = mongo.database;
+    if (resetFirst) await reset(database, redis, cassandra, neo4j);
+
+    // Same rule as problem 4: a match counts for the active season that contains its creation.
+    const season = await database
+      .collection<{ _id: string; endsAt: Date; startsAt: Date }>(mongoCollections.seasons)
+      .findOne({ status: "active" });
+    const ranked = await database
+      .collection<{ _id: string }>(mongoCollections.gameModes)
+      .countDocuments({ _id: mode, ranked: true });
+    if (!season || ranked === 0) {
+      throw new Error(
+        `There is no active season or ${mode} is not ranked: apply the schema first.`,
+      );
+    }
+    const inSeason = (at: number): boolean =>
+      season.startsAt.getTime() <= at && at <= season.endsAt.getTime();
+
     // Fixtures: who plays whom and when. Planted scenarios have a fixed outcome.
     const fixtures: Fixture[] = [];
     const spread = (count: number, fromDaysAgo: number, toDaysAgo: number): number[] =>
@@ -183,9 +263,17 @@ async function main(): Promise<void> {
     fixtures.sort((left, right) => left.at - right.at);
 
     // Simulate in order, so every player's mmrBefore/mmrAfter chain is consistent.
-    const ratings: Rating[] = Array.from({ length: playerCount }, () => ({ games: 0, mmr: 1_000 }));
+    const ratings: Rating[] = Array.from({ length: playerCount }, () => ({
+      applied: [],
+      games: 0,
+      mmr: 1_000,
+      seasonGames: 0,
+    }));
     const regionOf = (index: number): string => countries[index % countries.length]?.[1] ?? "NA";
     const matches = fixtures.map((fixture, index) => {
+      const matchId = id("match", index);
+      const createdAt = new Date(fixture.at - 15 * minuteMs);
+      const ranks = inSeason(createdAt.getTime());
       const ra = ratings[fixture.a] as Rating;
       const rb = ratings[fixture.b] as Rating;
       const expectedA = 1 / (1 + 10 ** ((rb.mmr - ra.mmr) / 400));
@@ -214,10 +302,12 @@ async function main(): Promise<void> {
         };
         rating.mmr += delta;
         rating.games += 1;
+        // Problem 8 only reverts a rating whose match is listed here.
+        rating.applied.push(matchId);
+        if (ranks) rating.seasonGames += 1;
         return score;
       };
       const finalScoreboard = [side(fixture.a, ra, results[0]), side(fixture.b, rb, results[1])];
-      const matchId = id("match", index);
       return {
         _id: matchId,
         closure: {
@@ -229,8 +319,12 @@ async function main(): Promise<void> {
           results: finalScoreboard.map(({ playerId, result }) => ({ playerId, result })),
           tsMs: fixture.at,
         },
-        createdAt: new Date(fixture.at - 15 * minuteMs),
+        createdAt,
         finalScoreboard,
+        leaderboard: {
+          status: ranks ? "published" : "not_ranked",
+          updatedAt: new Date(fixture.at),
+        },
         mode,
         players: finalScoreboard.map((score) => ({
           enqueuedAt: fixture.at - 20 * minuteMs,
@@ -248,48 +342,97 @@ async function main(): Promise<void> {
 
     const passwordHash = await hashPassword("seed-password-123");
     const registeredAt = new Date(now - (spanDays + 30) * dayMs);
+    const updatedAt = new Date(now);
     const players = ratings.map((rating, index) => {
       const [country, region] = countries[index % countries.length] ?? ["US", "NA"];
       return {
         _id: id("player", index),
         accountStatus: "active",
+        appliedRatingMatches: rating.applied,
         country,
         email: `seed_player_${String(index)}@seed.example`,
         level: 1 + Math.floor(rating.games / 10),
         passwordHash,
         ratings: {
-          [mode]: { gamesPlayed: rating.games, mmr: rating.mmr, updatedAt: new Date(now) },
+          [mode]: { gamesPlayed: rating.games, mmr: rating.mmr, updatedAt },
         },
         region,
         registeredAt,
-        updatedAt: new Date(now),
+        // The standing problem 4 keeps for the leaderboard (problem 5). MMR carries over between
+        // seasons, so the standing's mmr is the mode rating after the player's last match.
+        ...(rating.seasonGames > 0 && {
+          seasonRatings: {
+            [season._id]: {
+              [mode]: {
+                gamesPlayed: rating.seasonGames,
+                mmr: rating.mmr,
+                region,
+                revision: rating.seasonGames,
+                updatedAt,
+              },
+            },
+          },
+        }),
+        updatedAt,
         username: `seed_player_${String(index)}`,
       };
     });
+
+    // Problem 8: who registers the sanctions. The inactive one exercises ADMINISTRATOR_NOT_ACTIVE.
+    const administrators = (
+      [
+        ["seed_admin", "admin", true],
+        ["seed_moderator", "moderator", true],
+        ["seed_former_moderator", "moderator", false],
+      ] as const
+    ).map(([username, permissionLevel, active], index) => ({
+      _id: id("administrator", index),
+      active,
+      createdAt: registeredAt,
+      email: `${username}@seed.example`,
+      permissionLevel,
+      username,
+    }));
 
     // Reports: planted scenarios plus random background noise.
     const reports: {
       _id: string;
       createdAt: Date;
       description: string;
-      matchId: null;
+      matchId: string | null;
       reason: string;
       reportedPlayerId: string;
       reporterPlayerId: string;
       status: string;
     }[] = [];
-    const report = (reported: number, reporter: number, at: number, reason: string): void => {
+    const report = (
+      reported: number,
+      reporter: number,
+      at: number,
+      reason: string,
+      matchId: string | null = null,
+    ): void => {
       reports.push({
         _id: id("report", reports.length),
         createdAt: new Date(at),
         description: "seed data",
-        matchId: null,
+        matchId,
         reason,
         reportedPlayerId: id("player", reported),
         reporterPlayerId: id("player", reporter),
         status: "open",
       });
     };
+    // The ring's matches (player 0 beating 1, 2 and 3): the ones problem 8 voids.
+    const ringPlayers = new Set([1, 2, 3].map((index) => id("player", index)));
+    const leader = id("player", 0);
+    const ringMatches = matches
+      .filter(
+        (match) =>
+          match.finalScoreboard.some((score) => score.playerId === leader) &&
+          match.finalScoreboard.some((score) => ringPlayers.has(score.playerId)),
+      )
+      .map((match) => match._id);
     // Converging reports on the ring leader: 5 different reporters in 25 minutes.
     [100, 101, 102, 103, 104].forEach((reporter, index) =>
       report(0, reporter, now - 2 * dayMs + index * 6 * minuteMs, "match_fixing"),
@@ -304,6 +447,9 @@ async function main(): Promise<void> {
     );
     for (let index = 0; index < 6; index++)
       report(31, 130, now - 3 * dayMs + index * 2 * minuteMs, "cheating");
+    // A victim of the ring reports one of the fixed matches: the report problem 8 cites.
+    const sanctionReport = id("report", reports.length);
+    report(0, 1, now - 1 * dayMs, "match_fixing", ringMatches.at(-1) ?? null);
     for (let index = 0; index < reportCount; index++) {
       const reported = between(150, playerCount - 1);
       const reporter = (reported + between(1, playerCount - 1)) % playerCount;
@@ -315,7 +461,11 @@ async function main(): Promise<void> {
       );
     }
 
-    const database = mongo.database;
+    console.log(`Writing ${String(administrators.length)} administrators to MongoDB...`);
+    await upsertAll(
+      database.collection<{ _id: string }>(mongoCollections.administrators),
+      administrators,
+    );
     console.log(`Writing ${String(players.length)} players to MongoDB...`);
     await upsertAll(database.collection<{ _id: string }>(mongoCollections.players), players);
     console.log(`Writing ${String(matches.length)} closed matches to MongoDB...`);
@@ -337,9 +487,15 @@ async function main(): Promise<void> {
       new Neo4jMatchGraphAdapter(neo4j),
     ).project(everything);
     console.log(`  ${String(graph.matches)} matches, ${String(graph.rows)} relationships`);
+    console.log(`Rebuilding the ${season._id} / ${mode} leaderboards in Redis...`);
+    const board = await new LeaderboardService(
+      new RedisLeaderboardAdapter(redis),
+      new MongoLeaderboardAdapter(database),
+    ).rebuild(season._id, mode);
+    console.log(`  ${String(board.published)} players published`);
 
     console.log("\nPlanted cases (players are seed_player_<n>):");
-    console.log(`  match fixing ring : seed_player_0 beats 1, 2, 3     (${id("player", 0)})`);
+    console.log(`  match fixing ring : seed_player_0 beats 1, 2, 3     (${leader})`);
     console.log("  not flagged       : 10 vs 11 (7-3), 12 vs 13 (3 matches), 20 vs 21 (old)");
     console.log(
       "  report burst      : seed_player_0 (5 reporters / 25 min), seed_player_40 (4 / 40 min)",
@@ -347,10 +503,30 @@ async function main(): Promise<void> {
     console.log(
       "  not flagged       : seed_player_30 (spread over days), seed_player_31 (one reporter)",
     );
-    console.log(`\nTry: GET /history/players/${id("player", 0)}`);
-    console.log("     GET /fraud/irregular-behavior");
+    console.log(`  administrators    : seed_admin (${id("administrator", 0)}), seed_moderator,`);
+    console.log("                      seed_former_moderator (inactive)");
+    console.log(`\nTry: GET  /leaderboards/${mode}/${season._id}`);
+    console.log(`     GET  /history/players/${leader}`);
+    console.log("     GET  /fraud/irregular-behavior");
+    console.log("     POST /sanctions");
+    console.log(
+      `     ${JSON.stringify({
+        administratorId: id("administrator", 0),
+        matchIds: ringMatches.slice(0, 3),
+        playerId: leader,
+        reason: "match_fixing",
+        reportId: sanctionReport,
+        sanctionId: id("sanction", 0),
+        type: "permanent_ban",
+      })}`,
+    );
   } finally {
-    await Promise.allSettled([mongo.client.close(), cassandra.shutdown(), neo4j.driver.close()]);
+    await Promise.allSettled([
+      mongo.client.close(),
+      cassandra.shutdown(),
+      neo4j.driver.close(),
+      redis.quit(),
+    ]);
   }
 }
 

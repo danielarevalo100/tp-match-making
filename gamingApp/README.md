@@ -212,15 +212,18 @@ Sanction with result reversal and the player profile (problem 8). The sanction i
 
 Fault injection steps: `sanctions.findSanction`, `sanctions.findPlayer`, `sanctions.findAdministrator`, `sanctions.findReport`, `sanctions.findMatches`, `sanctions.insertSanction`, `matchmaking.leave`, `sanctions.markStep`, `sanctions.findSeasonCatalog`, `leaderboard.hold`, `sanctions.voidMatch`, `sanctions.revertRating`, `sanctions.deleteHistory`, `sanctions.deleteGraph`, `sanctions.markMatchReverted`, `sanctions.findStandings`, `leaderboard.release`, `leaderboard.publish`, `sanctions.completeReversal`, `profile.findPlayer`, `profile.findActiveSeason`, `profile.findSanctions`.
 
-### Test data for problems 6 and 7
+### Test data for the eight problems
 
 With the stack running and the schema applied, from `gamingApp` (needs a `.env`, see below):
 
 ```bash
-pnpm seed:history
+pnpm seed          # load; running it again does not duplicate anything
+pnpm seed:reset    # empty the four engines first, then load: always the same starting point
 ```
 
-It writes 2,000 players, 50,000 closed matches and about 300 reports to MongoDB (deterministic ids: running it again does not duplicate anything), then runs both projections to load Cassandra and Neo4j. It plants the cases listed in `docs/problema7.md`. Override with `SEED_PLAYERS`, `SEED_MATCHES`, `SEED_REPORTS` and `SEED_NOW`.
+The demo console (option 11) runs the same `--reset` load without needing a `.env`.
+
+It writes 3 administrators (one inactive), 2,000 players, 50,000 closed matches and about 320 reports to MongoDB with deterministic ids. Players carry their `ranked_1v1` rating, their standing in the active season (`seasonRatings`) and the matches already applied to it, exactly as problem 4 leaves them. Then the same services the API exposes load the other engines: the history projection (100,000 rows in Cassandra), the graph projection (100,000 `PLAYED` relationships in Neo4j) and the leaderboard rebuild (Redis). It plants the cases listed in `docs/problema7.md` and prints a ready `POST /sanctions` body for problem 8 (the ring leader, three of the fixed matches and the report that cites one). The reset keeps the catalogs (regions, game modes, seasons), the Cassandra tables and the Neo4j constraints. Override with `SEED_PLAYERS`, `SEED_MATCHES`, `SEED_REPORTS`, `SEED_NOW` and `SEED_RESET=1`.
 
 ## Shared endpoints
 

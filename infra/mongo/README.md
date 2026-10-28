@@ -42,4 +42,4 @@ db.sanctions.findOne({
 ## Pending
 
 - Player statistics (`ESTADISTICAS_JUGADOR`) are derived on read from the history in Cassandra (problem 6, see `docs/problema6.md`); they are not stored here.
-- Bulk test data (≥ 50,000 records) belongs to the load script, not to this schema file. `pnpm seed:history` (in `gamingApp`) covers the data for problems 6 and 7.
+- Bulk test data (≥ 50,000 records) belongs to the load script, not to this schema file. `pnpm seed` (in `gamingApp`) loads the data for the eight problems; `pnpm seed:reset` empties the engines first.

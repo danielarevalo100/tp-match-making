@@ -108,7 +108,7 @@ Pasos para `x-fail-at`: `fraud.findOpposingPairs`, `fraud.findReportedByMany`, `
 
 `test/unit/modules/fraudDetection/fraudDetection.test.ts`: reglas puras (beneficiario en cualquiera de los dos lados del par, pocos partidos, empate, umbral de ratio, ventana deslizante, denunciantes repetidos, ráfaga vieja vs. reciente), servicio con un grafo en memoria que replica el Cypher, ventana de tiempo y filtro de modo, cruce de señales, proyección idempotente, API (parámetros, validación 400, falla inyectada).
 
-Verificado contra los motores reales con `pnpm seed:history`: 50.000 partidas (100.000 relaciones `PLAYED`), consulta de acuerdo de resultados en ~650 ms, reportes en ~25 ms. El script planta los casos y sus señuelos:
+Verificado contra los motores reales con `pnpm seed`: 50.000 partidas (100.000 relaciones `PLAYED`), consulta de acuerdo de resultados en ~650 ms, reportes en ~25 ms. El script planta los casos y sus señuelos:
 
 | Caso plantado                                                             | Resultado esperado                         |
 | ------------------------------------------------------------------------- | ------------------------------------------ |

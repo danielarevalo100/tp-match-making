@@ -17,7 +17,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "tsx --test \"test/**/*.test.ts\"",
-    "seed:history": "tsx --env-file=.env src/scripts/seedHistoryAndFraud.ts"
+    "seed": "tsx --env-file=.env src/scripts/seed.ts",
+    "seed:reset": "tsx --env-file=.env src/scripts/seed.ts --reset"
   },
   "dependencies": {
     "cassandra-driver": "4.8.0",

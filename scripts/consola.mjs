@@ -11,6 +11,7 @@
 // Overrides (environment): APP_URL, MONGODB_URI, MONGODB_DB_NAME, REDIS_URL, CASSANDRA_HOST,
 // CASSANDRA_PORT, NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD.
 
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -858,6 +859,50 @@ async function engineStatus() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 11. Limpiar bases e inicializar datos (gamingApp/src/scripts/seed.ts --reset)
+// ---------------------------------------------------------------------------
+
+async function resetAndSeed() {
+  title("Limpiar bases e inicializar datos  ->  los cuatro motores desde cero");
+  info("Borra jugadores, partidas, reportes, sanciones y administradores (MongoDB), todo Redis,");
+  info("las tablas de Cassandra y el grafo de Neo4j. Los catálogos y el esquema se conservan.");
+  info("Después carga 2.000 jugadores, 50.000 partidas cerradas y los casos de los problemas 7 y 8.");
+  if (!(await confirm("¿Seguro? Se pierde todo lo cargado", false))) return;
+
+  // The seed reads its configuration from the environment: the same engines this console reads.
+  const seedEnv = {
+    ...process.env,
+    CASSANDRA_CONTACT_POINTS: CASSANDRA_HOST,
+    CASSANDRA_PORT: String(CASSANDRA_PORT),
+    MONGODB_DB_NAME,
+    MONGODB_URI,
+    NEO4J_PASSWORD,
+    NEO4J_URI,
+    NEO4J_USERNAME,
+    REDIS_URL,
+  };
+  const started = performance.now();
+  const code = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "src/scripts/seed.ts", "--reset"], {
+      cwd: new URL("../gamingApp/", import.meta.url),
+      env: seedEnv,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    child.on("error", reject);
+    child.on("exit", resolve);
+  });
+  if (code !== 0) {
+    errMsg(`La carga terminó con código ${code}.`);
+    return;
+  }
+  session.players.length = 0;
+  session.matches.length = 0;
+  okMsg(`Bases limpias y datos cargados en ${((performance.now() - started) / 1000).toFixed(0)} s.`);
+  info('Los jugadores cargados se buscan por nombre: "seed_player_0" ... "seed_player_1999".');
+  await engineStatus();
+}
+
 const menu = [
   ["Registrar jugador                      (MongoDB)", () => registerPlayer()],
   ["Poner jugador en la cola               (MongoDB -> Redis)", () => enqueuePlayer()],
@@ -869,6 +914,7 @@ const menu = [
   ["Perfil completo de un jugador          (MongoDB + Redis + Cassandra)", () => showProfile()],
   ["Recorrido guiado completo              (todo lo anterior, paso a paso)", () => guidedTour()],
   ["Estado de los motores", () => engineStatus()],
+  ["Limpiar bases e inicializar datos      (los cuatro motores desde cero)", () => resetAndSeed()],
 ];
 
 async function main() {

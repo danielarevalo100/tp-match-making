@@ -172,7 +172,9 @@ try {
   for (let start = 0; start < seeded.length; start += 5_000) {
     await players.insertMany(seeded.slice(start, start + 5_000), { ordered: false });
   }
-  const ranked = await players.countDocuments({ [standingPath]: { $exists: true } });
+  // A standing with no games left (problem 8 voided all of them) exists but is not ranked.
+  const rankedFilter = { [`${standingPath}.gamesPlayed`]: { $gte: 1 } };
+  const ranked = await players.countDocuments(rankedFilter);
   ok(`replaced ${removed.deletedCount} previous demo players, inserted ${seeded.length} in ${(performance.now() - started).toFixed(0)}ms`);
   console.log(`  MongoDB ranks ${ranked} players in ${SEASON} / ${MODE}`);
 
@@ -196,7 +198,7 @@ try {
   );
   check(top.every((entry) => typeof entry.username === "string"), true, "every entry has its username from MongoDB");
 
-  const regionalCount = await players.countDocuments({ [`${standingPath}.region`]: "LATAM" });
+  const regionalCount = await players.countDocuments({ ...rankedFilter, [`${standingPath}.region`]: "LATAM" });
   response = await call("GET", `${board}?region=LATAM`);
   check(response.body.totalPlayers, regionalCount, "the LATAM board has every LATAM player");
   check(response.body.entries.every((entry) => entry.region === "LATAM"), true, "the LATAM board only has LATAM players");
@@ -215,6 +217,7 @@ try {
   const independent =
     1 +
     (await players.countDocuments({
+      ...rankedFilter,
       $or: [
         { [`${standingPath}.mmr`]: { $gt: player.mmr } },
         { [`${standingPath}.mmr`]: player.mmr, _id: { $gt: sample._id } },
@@ -281,8 +284,10 @@ try {
   console.log("  6b. Redis loses the boards; MongoDB still has every standing");
   const keys = await redis.keys(`lb:${SEASON}:${MODE}:*`);
   if (keys.length > 0) await redis.del(...keys);
+  check(await redis.zcard(`lb:${SEASON}:${MODE}:global`), 0, "the board is empty after the loss");
+  // Lazy loading: the first query finds the board empty and rebuilds it before answering.
   response = await call("GET", board);
-  check(response.body.totalPlayers, 0, "the board is empty after the loss");
+  check(response.body.totalPlayers, ranked, "the next query rebuilds the board on its own");
   response = await call("POST", `${board}/rebuild`);
   check(response.body.published, ranked, "rebuild republishes every standing from MongoDB");
   response = await call("GET", `${board}/players/${sample._id}`);

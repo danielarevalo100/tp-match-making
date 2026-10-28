@@ -101,7 +101,7 @@ Pasos para `x-fail-at`: `playerHistory.findPlayer`, `playerHistory.findActiveSea
 
 `test/unit/modules/playerHistory/playerHistory.test.ts` (servicio, proyección y API con fakes en memoria): últimas 50 ordenadas, las tres ventanas, evolución del rating, ratio sin muertes, jugador sin partidas, 404/400, falla inyectada, proyección reanudable e idempotente.
 
-Verificado además contra los motores reales con el script de carga (`pnpm seed:history`, ver README del módulo): 50.000 partidas → 100.000 filas, y la consulta de un jugador responde en ~100 ms incluyendo ambos motores.
+Verificado además contra los motores reales con el script de carga (`pnpm seed`, ver README del módulo): 50.000 partidas → 100.000 filas, y la consulta de un jugador responde en ~100 ms incluyendo ambos motores.
 
 ## Limitaciones conocidas
 
