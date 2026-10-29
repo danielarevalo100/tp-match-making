@@ -307,6 +307,12 @@ node scripts/demo-problem-8.mjs
 
 Requiere toda la stack de Compose, el schema aplicado y las dependencias de `gamingApp` instaladas. Carga directo en MongoDB el estado que deja P4 (tres jugadores y tres partidas cerradas), lo proyecta a Cassandra, Neo4j y Redis por la API, y recorre: la falla en la mitad, el `rebuild` con jugadores retenidos, `resume`, el reintento idempotente, la falla antes de registrar, una partida inválida y el bloqueo en la cola.
 
+Para mostrarlo en vivo, la consola (`consola.cmd` o `node scripts/consola.mjs`) tiene dos opciones:
+
+- **9) Sancionar jugador y anular partidas:** se elige el jugador (con los datos de la opción 13, `seed_player_0`), las partidas con trampa (las denunciadas aparecen primero), el administrador, el tipo y, opcionalmente, una falla: a mitad de la reversión (Cassandra, en la primera partida) o antes de registrar (MongoDB). Después muestra el journal de la sanción, el estado de las partidas, el rating de cada afectado en MongoDB contra el leaderboard de Redis (con la marca de retenido), las filas del historial y el nodo del grafo, y ofrece retomar la reversión.
+- **10) Retomar una sanción incompleta:** lista las sanciones con la reversión `pending`, `reverting` o `failed` y hace `resume`.
+- **11) Recorrido guiado completo:** termina sancionando al ganador de la partida que armó, con la falla a mitad de camino y el `resume`, y muestra su perfil.
+
 ## Modelo de datos
 
 ### MongoDB (`infra/mongo/init.js`, `schema_metadata` v8)

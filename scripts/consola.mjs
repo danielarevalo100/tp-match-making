@@ -165,7 +165,8 @@ async function api(method, path, body, headers) {
   if (body !== undefined) info(JSON.stringify(body));
   const response = await call(method, path, body, headers);
   if (response.body?.error === "INJECTED_FAILURE") {
-    console.log(`   ${yellow(`HTTP ${response.status}  falla simulada en "${response.body.step}" (esperada)`)}`);
+    const where = response.body.step ?? response.body.engine ?? "?";
+    console.log(`   ${yellow(`HTTP ${response.status}  falla simulada en "${where}" (esperada)`)}`);
     return null;
   }
   const paint = response.status < 300 ? green : red;
@@ -767,9 +768,9 @@ async function projectClosedMatches(player) {
 // 8. Perfil completo (cuatro motores en paralelo) — problema 8
 // ---------------------------------------------------------------------------
 
-async function showProfile() {
+async function showProfile(player) {
   title("Perfil completo  ->  MongoDB + Redis + Cassandra en una consulta  (problema 8)");
-  const player = await pickPlayer();
+  player ??= await pickPlayer();
   if (!player) return;
   const profile = await api("GET", `/profiles/${player.id}`);
   if (!profile) return;
@@ -785,11 +786,362 @@ async function showProfile() {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Recorrido guiado: todo el flujo con datos mínimos
+// 9 y 10. Sanción con reversión de resultados — problema 8
+// ---------------------------------------------------------------------------
+
+// Each simulated failure sends the header of the current fault injection (x-fail-at, one step)
+// and the one of the per-engine version (x-fail-db): both stop the reversal at the same point.
+const sanctionFailures = [
+  { label: "Sin falla", headers: {} },
+  {
+    explain:
+      "Falla el borrado del historial en Cassandra en la primera partida: la sanción queda registrada,\n" +
+      "   MongoDB ya revirtió esa partida, pero el leaderboard no cambia porque los jugadores están retenidos.",
+    headers: { "x-fail-at": "sanctions.deleteHistory", "x-fail-db": "cassandra" },
+    label: "Falla a mitad de la reversión          (Cassandra, en la primera partida)",
+  },
+  {
+    explain: "Falla el insert de la sanción en MongoDB: no queda nada registrado ni revertido.",
+    headers: { "x-fail-at": "sanctions.insertSanction", "x-fail-db": "mongo" },
+    label: "Falla antes de registrar la sanción    (MongoDB)",
+  },
+];
+
+async function usernames(ids) {
+  if (!mongoDb || ids.length === 0) return new Map();
+  const docs = await mongo("players")
+    .find({ _id: { $in: [...ids] } }, { projection: { username: 1 } })
+    .toArray();
+  return new Map(docs.map((doc) => [doc._id, doc.username]));
+}
+
+// "1,3", "1 3" or "todas" -> the chosen items, in list order.
+function pickMany(answer, options) {
+  if (/^tod/i.test(answer)) return options;
+  const numbers = answer.split(/[\s,;]+/).filter(Boolean).map(Number);
+  if (numbers.length === 0 || numbers.some((n) => !Number.isInteger(n) || n < 1 || n > options.length)) {
+    return null;
+  }
+  return options.filter((_, index) => numbers.includes(index + 1));
+}
+
+// `automatic`: the guided tour takes the first active administrator, or creates one, without asking.
+async function pickAdministrator(automatic = false) {
+  const admins = await mongo("administrators")
+    .find({ active: true }, { projection: { permissionLevel: 1, username: 1 } })
+    .limit(10)
+    .toArray();
+  if (admins.length > 0) {
+    if (automatic) return admins[0];
+    return choose("Administrador que sanciona", admins, (admin) =>
+      `${bold(admin.username)} ${dim(`${admin.permissionLevel} id=${short(admin._id)}`)}`,
+    );
+  }
+  info("No hay administradores activos en MongoDB (la opción 13 carga tres).");
+  if (
+    !automatic &&
+    !(await confirm("¿Crear un administrador de demostración directamente en MongoDB?", true))
+  ) {
+    return null;
+  }
+  const suffix = randomUUID().slice(0, 4);
+  const admin = {
+    _id: randomUUID(),
+    active: true,
+    createdAt: new Date(),
+    email: `admin_${suffix}@example.com`,
+    permissionLevel: "admin",
+    username: `admin_${suffix}`,
+  };
+  await mongo("administrators").insertOne(admin);
+  okMsg(`Administrador ${admin.username} creado (no hay endpoint de administradores en la API).`);
+  return admin;
+}
+
+// `preset` ({ player, matchId, failure }) is how the guided tour sanctions without asking anything.
+async function sanctionPlayer(preset) {
+  title("Sancionar jugador  ->  MongoDB, Redis, Cassandra y Neo4j  (problema 8)");
+  if (!mongoDb) {
+    errMsg("Se necesita MongoDB para elegir las partidas.");
+    return;
+  }
+  if (preset) return sanctionPreset(preset);
+  info('Con los datos de la opción 13, el tramposo plantado es "seed_player_0".');
+  const player = await pickPlayer("Jugador a sancionar");
+  if (!player) return;
+
+  step("Partidas cerradas del jugador con el rating ya aplicado (las únicas que se pueden anular):");
+  // Matches someone reported come first, then the latest ones.
+  const reported = await mongo("reports")
+    .find({ matchId: { $ne: null }, reportedPlayerId: player.id }, { projection: { matchId: 1 } })
+    .toArray();
+  const reportedMatches = new Set(reported.map((report) => report.matchId));
+  const reversible = { "players.playerId": player.id, scoringStatus: "applied", status: "closed" };
+  const projection = { createdAt: 1, finalScoreboard: 1, mode: 1 };
+  const reportedDocs = await mongo("matches")
+    .find({ ...reversible, _id: { $in: [...reportedMatches] } }, { projection })
+    .toArray();
+  const latest = await mongo("matches")
+    .find({ ...reversible, _id: { $nin: [...reportedMatches] } }, { projection })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .toArray();
+  const matches = [...reportedDocs, ...latest];
+  if (matches.length === 0) {
+    errMsg("El jugador no tiene partidas cerradas con scoring aplicado (cerrá una con la opción 5).");
+    return;
+  }
+  const names = await usernames(matches.flatMap((match) => match.finalScoreboard.map((s) => s.playerId)));
+  matches.forEach((match, index) => {
+    const own = match.finalScoreboard.find((score) => score.playerId === player.id);
+    const rivals = match.finalScoreboard
+      .filter((score) => score.playerId !== player.id)
+      .map((score) => names.get(score.playerId) ?? short(score.playerId));
+    const flag = reportedMatches.has(match._id) ? yellow("  (denunciada)") : "";
+    console.log(
+      `     ${bold(String(index + 1))}) ${bold(short(match._id))} ${match.mode} ` +
+        `${dim(match.createdAt.toISOString().slice(0, 16).replace("T", " "))}  ` +
+        `${own?.result ?? "?"} (${own?.ratingDelta > 0 ? "+" : ""}${own?.ratingDelta ?? "?"}) vs ${rivals.join(", ")}${flag}`,
+    );
+  });
+  const preselected = matches
+    .map((match, index) => (reportedMatches.has(match._id) ? String(index + 1) : null))
+    .filter(Boolean);
+  let chosen = null;
+  while (!chosen) {
+    chosen = pickMany(
+      await ask("Partidas con trampa (números separados por coma, o 'todas')", preselected.join(",") || "1"),
+      matches,
+    );
+    if (!chosen) errMsg(`Elegí números entre 1 y ${matches.length}.`);
+  }
+
+  const admin = await pickAdministrator();
+  if (!admin) return;
+  const report = await mongo("reports").findOne(
+    { matchId: { $in: chosen.map((match) => match._id) }, reportedPlayerId: player.id },
+    { projection: { _id: 1, matchId: 1 } },
+  );
+  if (report) info(`Se cita el reporte ${short(report._id)}… que denuncia la partida ${short(report.matchId)}….`);
+  const type = await choose(
+    "Tipo de sanción",
+    ["permanent_ban", "temporary_suspension", "matchmaking_restriction"],
+    (option) => option,
+  );
+  const failure = await choose("¿Simular una falla?", sanctionFailures, (option) => option.label);
+  if (failure.explain) info(failure.explain);
+  await submitSanction({ admin, chosen, failure, player, reportId: report?._id ?? null, type });
+}
+
+// Guided tour: the winner of the tour's match is sanctioned for it, with the failure half way and
+// the resume right after, so the retention shows up without any question.
+async function sanctionPreset({ failure, matchId, player }) {
+  const match = await mongo("matches").findOne(
+    { _id: matchId, scoringStatus: "applied", status: "closed" },
+    { projection: { createdAt: 1, finalScoreboard: 1, mode: 1 } },
+  );
+  if (!match) {
+    errMsg("La partida del recorrido no está cerrada con el scoring aplicado: no se puede anular.");
+    return;
+  }
+  const admin = await pickAdministrator(true);
+  info(`${player.username} hizo trampa en la partida ${short(matchId)}…: lo sanciona ${admin.username}.`);
+  if (failure.explain) info(failure.explain);
+  await submitSanction({
+    admin,
+    autoResume: true,
+    chosen: [match],
+    failure,
+    player,
+    reportId: null,
+    type: "permanent_ban",
+  });
+}
+
+async function submitSanction({ admin, autoResume = false, chosen, failure, player, reportId, type }) {
+  const participants = [...new Set(chosen.flatMap((match) => match.finalScoreboard.map((s) => s.playerId)))];
+  const before = await ratingsSnapshot(participants, chosen[0].mode);
+  const body = {
+    administratorId: admin._id,
+    matchIds: chosen.map((match) => match._id),
+    playerId: player.id,
+    reason: "cheating",
+    reportId,
+    sanctionId: randomUUID(),
+    type,
+  };
+
+  step("Primero se registra la sanción en MongoDB; después la reversión avanza paso a paso.");
+  const sanction = await api("POST", "/sanctions", body, failure.headers);
+  if (!sanction) {
+    step("¿Quedó algo registrado?");
+    show("MongoDB", `db.sanctions.findOne({ _id: "${short(body.sanctionId)}…" })`,
+      await mongoFind("sanctions", { _id: body.sanctionId }));
+    show("MongoDB", "estado de las partidas elegidas", await matchStates(body.matchIds));
+    info("El pedido se rechazó antes de registrar la sanción: no hay nada que deshacer.");
+    return;
+  }
+  await showSanctionState(body.sanctionId, before);
+
+  if (sanction.reversal.status !== "completed") {
+    info("La sanción ya está en vigor (el jugador no puede entrar a la cola) aunque la reversión no terminó.");
+    info("Mientras tanto ningún leaderboard muestra la anulación a medias: los afectados están retenidos.");
+    if (autoResume) {
+      await pause();
+      await resumeSanction(body.sanctionId, before);
+    } else if (await confirm("¿Retomar la reversión ahora (POST /sanctions/:id/resume)?", true)) {
+      await resumeSanction(body.sanctionId, before);
+    } else {
+      info("Se puede retomar después con la opción 10.");
+    }
+  }
+}
+
+async function resumeSanction(sanctionId, before) {
+  step("El journal de la sanción dice qué falta: se rehace solo eso, sin revertir nada dos veces.");
+  const resumed = await api("POST", `/sanctions/${sanctionId}/resume`);
+  if (!resumed) return;
+  await showSanctionState(sanctionId, before);
+  if (resumed.reversal.status === "completed") {
+    okMsg("Reversión completa: el leaderboard muestra a todos los afectados actualizados de una vez.");
+  }
+}
+
+async function resumeIncompleteSanction() {
+  title("Retomar una sanción incompleta  (problema 8)");
+  if (!mongoDb) {
+    errMsg("Se necesita MongoDB para buscar las sanciones.");
+    return;
+  }
+  const pending = await mongo("sanctions")
+    .find(
+      { "reversal.status": { $in: ["pending", "reverting", "failed"] } },
+      { projection: { createdAt: 1, playerId: 1, reversal: 1 } },
+    )
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .toArray();
+  if (pending.length === 0) {
+    okMsg("No hay sanciones con la reversión incompleta.");
+    return;
+  }
+  const names = await usernames(pending.map((sanction) => sanction.playerId));
+  const sanction = await choose("Sanción", pending, (doc) =>
+    `${bold(short(doc._id))} ${names.get(doc.playerId) ?? short(doc.playerId)} ` +
+      dim(`${doc.reversal.status}, ${doc.reversal.revertedMatchIds.length} partida(s) revertida(s)`),
+  );
+  await showSanctionState(sanction._id);
+  await resumeSanction(sanction._id);
+}
+
+async function ratingsSnapshot(playerIds, mode) {
+  const docs = await mongo("players")
+    .find({ _id: { $in: playerIds } }, { projection: { [`ratings.${mode}.mmr`]: 1 } })
+    .toArray();
+  return new Map(docs.map((doc) => [doc._id, doc.ratings?.[mode]?.mmr ?? null]));
+}
+
+async function matchStates(matchIds) {
+  const docs = await mongo("matches")
+    .find({ _id: { $in: [...matchIds] } }, { projection: { status: 1, voided: 1 } })
+    .toArray();
+  return docs.map((doc) => ({
+    partida: short(doc._id),
+    estado: doc.status,
+    anuladaPor: doc.voided ? short(doc.voided.sanctionId) : null,
+  }));
+}
+
+// What each engine holds now for the sanction: the journal, the matches, ratings against the
+// leaderboard, the history rows, the graph and the queue.
+async function showSanctionState(sanctionId, before = new Map()) {
+  const sanction = await mongo("sanctions").findOne({ _id: sanctionId });
+  if (!sanction) {
+    show("MongoDB", `db.sanctions.findOne({ _id: "${short(sanctionId)}…" })`, null);
+    return;
+  }
+  const reversal = sanction.reversal ?? {};
+  step("MongoDB: la sanción y el journal de la reversión.");
+  show("MongoDB", `db.sanctions.findOne({ _id: "${short(sanctionId)}…" })`, {
+    estado: sanction.status,
+    tipo: sanction.type,
+    reversion: {
+      estado: reversal.status,
+      intentos: reversal.attempts,
+      pasosHechos: reversal.completedSteps,
+      partidasRevertidas: `${reversal.revertedMatchIds?.length ?? 0} de ${sanction.matchIds?.length ?? 0}`,
+      ultimoError: reversal.lastError,
+    },
+  });
+  show("MongoDB", "estado de las partidas de la sanción", await matchStates(sanction.matchIds ?? []));
+
+  const matches = await mongo("matches")
+    .find(
+      { _id: { $in: sanction.matchIds ?? [] } },
+      { projection: { "closure.tsMs": 1, "finalScoreboard.playerId": 1, mode: 1 } },
+    )
+    .toArray();
+  const participants = [...new Set(matches.flatMap((match) => match.finalScoreboard.map((s) => s.playerId)))];
+  const names = await usernames(participants);
+  const mode = matches[0]?.mode ?? "ranked_1v1";
+  const season = await activeSeason();
+
+  step("Rating en MongoDB contra lo que muestra el leaderboard en Redis:");
+  const now = await ratingsSnapshot(participants, mode);
+  const rows = [];
+  for (const playerId of participants) {
+    const row = {
+      jugador: names.get(playerId) ?? short(playerId),
+      ...(before.size > 0 ? { mmrAntes: before.get(playerId) ?? null } : {}),
+      mmrMongo: now.get(playerId) ?? null,
+    };
+    if (season && db.redis) {
+      const score = await db.redis.zscore(`lb:${season._id}:${mode}:global`, playerId);
+      row.mmrLeaderboard = score === null ? "no figura" : Number(score);
+      row.retenido = (await db.redis.hget(`lb:${season._id}:${mode}:held`, playerId)) !== null;
+    }
+    rows.push(row);
+  }
+  show("MongoDB + Redis", `ratings.${mode}.mmr  vs  ZSCORE lb:${season?._id ?? "?"}:${mode}:global`, rows);
+  info("Si mmrMongo y mmrLeaderboard difieren con 'retenido: true', es la retención: el tablero espera a que");
+  info("la reversión termine para mostrar a todos juntos. 'no figura' = se quedó sin partidas en la temporada.");
+
+  step("Cassandra y Neo4j: ¿la partida anulada sigue en el historial y en el grafo?");
+  const traces = [];
+  for (const match of matches) {
+    let historyRows = "(Cassandra no disponible)";
+    if (db.cassandra && match.closure?.tsMs) {
+      historyRows = 0;
+      for (const { playerId } of match.finalScoreboard) {
+        const found = await cassandraRows(
+          "SELECT match_id FROM match_history_by_player WHERE player_id = ? AND ended_at = ? AND match_id = ?",
+          [playerId, new Date(match.closure.tsMs), match._id],
+        );
+        historyRows += Array.isArray(found) ? found.length : 0;
+      }
+    }
+    const node = await neo4jRows("MATCH (m:Match {id: $id}) RETURN count(m) AS nodos", { id: match._id });
+    traces.push({
+      partida: short(match._id),
+      filasEnHistorial: historyRows,
+      nodoEnGrafo: Array.isArray(node) ? node[0]?.nodos > 0 : node,
+    });
+  }
+  show("Cassandra + Neo4j", "match_history_by_player y (:Match {id})", traces);
+
+  if (db.redis) {
+    show("Redis", `EXISTS mm:ticket:${short(sanction.playerId)}…  (cola de matchmaking)`, {
+      enCola: (await db.redis.exists(`mm:ticket:${sanction.playerId}`)) === 1,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 11. Recorrido guiado: todo el flujo con datos mínimos, hasta la sanción
 // ---------------------------------------------------------------------------
 
 async function guidedTour() {
-  title("Recorrido guiado: de registrar jugadores a la partida cerrada");
+  title("Recorrido guiado: de registrar jugadores a la sanción");
   const country = (await ask("País de los dos jugadores", "AR")).toUpperCase();
   const base = (await ask("Prefijo de los nombres de usuario", "demo")).toLowerCase();
   const mode = "ranked_1v1";
@@ -829,6 +1181,15 @@ async function guidedTour() {
   ]);
   await pause();
   await projectClosedMatches(players[0]);
+  await pause();
+
+  // Problem 8: the winner turns out to have cheated. The match is already in the four engines
+  // (MongoDB, the Redis leaderboard, the Cassandra history and the Neo4j graph), so voiding it
+  // touches all of them; the failure half way shows the leaderboard held until the resume.
+  const winner = players.find((player) => player.id === a) ?? players[0];
+  await sanctionPlayer({ failure: sanctionFailures[1], matchId: match.matchId, player: winner });
+  await pause();
+  await showProfile(winner);
   okMsg("Recorrido completo.");
 }
 
@@ -860,7 +1221,7 @@ async function engineStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// 11. Limpiar bases e inicializar datos (gamingApp/src/scripts/seed.ts --reset)
+// 13. Limpiar bases e inicializar datos (gamingApp/src/scripts/seed.ts --reset)
 // ---------------------------------------------------------------------------
 
 async function resetAndSeed() {
@@ -912,6 +1273,8 @@ const menu = [
   ["Ver leaderboard                        (Redis + MongoDB)", () => showLeaderboard()],
   ["Proyectar historial y grafo            (MongoDB -> Cassandra y Neo4j)", () => projectClosedMatches()],
   ["Perfil completo de un jugador          (MongoDB + Redis + Cassandra)", () => showProfile()],
+  ["Sancionar jugador y anular partidas    (MongoDB, Redis, Cassandra y Neo4j)", () => sanctionPlayer()],
+  ["Retomar una sanción incompleta         (resume desde el journal)", () => resumeIncompleteSanction()],
   ["Recorrido guiado completo              (todo lo anterior, paso a paso)", () => guidedTour()],
   ["Estado de los motores", () => engineStatus()],
   ["Limpiar bases e inicializar datos      (los cuatro motores desde cero)", () => resetAndSeed()],

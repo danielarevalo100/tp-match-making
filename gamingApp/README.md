@@ -221,7 +221,7 @@ pnpm seed          # load; running it again does not duplicate anything
 pnpm seed:reset    # empty the four engines first, then load: always the same starting point
 ```
 
-The demo console (option 11) runs the same `--reset` load without needing a `.env`.
+The demo console (option 13) runs the same `--reset` load without needing a `.env`.
 
 It writes 3 administrators (one inactive), 2,000 players, 50,000 closed matches and about 320 reports to MongoDB with deterministic ids. Players carry their `ranked_1v1` rating, their standing in the active season (`seasonRatings`) and the matches already applied to it, exactly as problem 4 leaves them. Then the same services the API exposes load the other engines: the history projection (100,000 rows in Cassandra), the graph projection (100,000 `PLAYED` relationships in Neo4j) and the leaderboard rebuild (Redis). It plants the cases listed in `docs/problema7.md` and prints a ready `POST /sanctions` body for problem 8 (the ring leader, three of the fixed matches and the report that cites one). The reset keeps the catalogs (regions, game modes, seasons), the Cassandra tables and the Neo4j constraints. Override with `SEED_PLAYERS`, `SEED_MATCHES`, `SEED_REPORTS`, `SEED_NOW` and `SEED_RESET=1`.
 
