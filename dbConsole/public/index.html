@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DB Console</title>
+    <link rel="stylesheet" href="/vendor/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>DB Console</h1>
+      <nav>
+        <button type="button" data-engine="mongo">Mongo</button>
+        <button type="button" data-engine="redis">Redis</button>
+        <button type="button" data-engine="cassandra">Cassandra</button>
+        <button type="button" data-engine="neo4j">Neo4j</button>
+      </nav>
+      <p class="warning">Solo local. Con permisos completos: puede editar y borrar datos.</p>
+    </header>
+    <main id="terminals">
+      <p id="empty">Elegí un motor para abrir su consola.</p>
+    </main>
+    <script src="/vendor/xterm/lib/xterm.js"></script>
+    <script src="/vendor/addon-fit/lib/addon-fit.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

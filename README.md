@@ -50,6 +50,7 @@ Do not add `-v` unless you intentionally want to delete all local database data.
 | Neo4j HTTP | `7474` | `neo4j:7474` | Browser UI |
 | Neo4j Bolt | `7687` | `neo4j:7687` | Player relationship queries |
 | Gaming API | `3001` | `gaming-app:3000` | Application layer REST API |
+| DB Console | `3002` (`127.0.0.1` only) | `db-console:3000` | Web terminals for the four engines |
 
 Ports are configurable in `.env`. Applications running in Compose must use the internal service names, while tools running directly on the host use `localhost`.
 
@@ -57,6 +58,7 @@ Ports are configurable in `.env`. Applications running in Compose must use the i
 
 ```text
 .
+|-- dbConsole/
 |-- docker-compose.yml
 |-- docs/
 |   `-- infrastructure.md
@@ -74,6 +76,12 @@ Ports are configurable in `.env`. Applications running in Compose must use the i
 The schema files are intentionally minimal until access patterns and ownership are agreed. MongoDB runs its bootstrap script when its data volume is first created; the explicit initialization script safely reapplies it and applies the Cassandra and Neo4j base schemas.
 
 See [the infrastructure guide](docs/infrastructure.md) for health checks, connection strings, troubleshooting, and pending architecture decisions.
+
+## DB console
+
+Open `http://localhost:3002` and pick an engine to get a real `mongosh`, `redis-cli`, `cqlsh`, or `cypher-shell` terminal in the browser. Each engine keeps its session while the page stays open. Reloading or closing the page ends all sessions.
+
+The console has no login and connects with full permissions, so it can edit and delete data. It is for local use only: the port is published on `127.0.0.1` and must not be exposed to other machines.
 
 ## Application layer
 

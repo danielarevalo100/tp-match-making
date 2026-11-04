@@ -1,0 +1,95 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: #14171c;
+  color: #e6e8eb;
+  font-family: system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2b3038;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid #3a414c;
+  border-radius: 6px;
+  background: #222730;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2c323d;
+}
+
+button[aria-pressed="true"] {
+  border-color: #5b9dd9;
+  background: #1f3a54;
+}
+
+.warning {
+  margin: 0;
+  color: #e0b050;
+  font-size: 13px;
+}
+
+main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+#empty {
+  padding: 16px;
+  color: #9aa3ad;
+}
+
+.session {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+}
+
+.session[hidden] {
+  display: none;
+}
+
+.terminal-host {
+  height: 100%;
+}
+
+.reconnect {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  z-index: 10;
+  border-color: #5b9dd9;
+}

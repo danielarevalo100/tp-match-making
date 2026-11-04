@@ -139,6 +139,23 @@ services:
     networks:
       - gaming-network
 
+  db-console:
+    build:
+      context: ./dbConsole
+    container_name: gaming-db-console
+    environment:
+      PORT: 3000
+      DB_CONSOLE_PORT: ${DB_CONSOLE_PORT:-3002}
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-gaming_admin}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change_me_local_only}
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-change_me_local_only}
+    ports:
+      - "127.0.0.1:${DB_CONSOLE_PORT:-3002}:3000"
+    restart: unless-stopped
+    networks:
+      - gaming-network
+
 networks:
   gaming-network:
     name: gaming-network
