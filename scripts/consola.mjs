@@ -765,6 +765,153 @@ async function projectClosedMatches(player) {
 }
 
 // ---------------------------------------------------------------------------
+// 14. Historial y estadísticas (Cassandra + MongoDB) — problema 6
+// ---------------------------------------------------------------------------
+
+const shownHistoryMatches = 10;
+const formatDate = (value) => new Date(value).toISOString().slice(0, 16).replace("T", " ");
+
+async function showHistory(player) {
+  title("Historial y estadísticas  ->  Cassandra (partidas) + MongoDB (jugador)  (problema 6)");
+  player ??= await pickPlayer("¿De qué jugador?");
+  if (!player) return;
+
+  step("MongoDB confirma el jugador y la temporada activa; Cassandra lee una sola partición, la del jugador.");
+  info(`Cassandra: SELECT … FROM match_history_by_player WHERE player_id = ${short(player.id)}… LIMIT 50`);
+  info("           y, en la misma partición, ended_at >= el inicio más antiguo de las tres ventanas.");
+  const history = await api("GET", `/history/players/${player.id}`);
+  if (!history) return;
+
+  const matches = history.matches ?? [];
+  step(`Últimas ${matches.length} partidas de ${history.player.username}, la más nueva primero:`);
+  if (matches.length === 0) {
+    info("Cassandra no tiene filas de este jugador. Si cerró partidas recién, corré la proyección (opción 7).");
+  } else {
+    printHistory(matches.slice(0, shownHistoryMatches));
+    if (matches.length > shownHistoryMatches) info(`Se muestran ${shownHistoryMatches} de ${matches.length}.`);
+  }
+
+  step("Estadísticas por período: se calculan al leer, a partir de esas filas. No hay contadores guardados.");
+  printPeriods(history.stats);
+  info("Semana y mes son ventanas móviles (últimos 7 y 30 días); la temporada va desde el inicio de la activa.");
+}
+
+function printHistory(matches) {
+  console.log();
+  console.log(bold(`     ${"Fecha (UTC)".padEnd(18)}${"Modo".padEnd(13)}${"Result.".padEnd(9)}${"K/D".padEnd(8)}MMR`));
+  for (const match of matches) {
+    const sign = match.ratingDelta > 0 ? "+" : "";
+    console.log(
+      `     ${formatDate(match.endedAt).padEnd(18)}${match.mode.padEnd(13)}${match.result.padEnd(9)}` +
+        `${`${match.kills}/${match.deaths}`.padEnd(8)}${match.mmrBefore} -> ${match.mmrAfter} (${sign}${match.ratingDelta})`,
+    );
+  }
+}
+
+function printPeriods(stats) {
+  const periods = [
+    ["Semana", stats.week],
+    ["Mes", stats.month],
+    [stats.season ? `Temporada ${stats.season.seasonId}` : "Temporada", stats.season],
+  ];
+  console.log();
+  console.log(
+    bold(`     ${"Período".padEnd(20)}${"Part.".padEnd(7)}${"V/D/E".padEnd(11)}${"% vict.".padEnd(9)}${"K/D".padEnd(7)}Rating`),
+  );
+  for (const [name, period] of periods) {
+    if (!period) {
+      console.log(`     ${name.padEnd(20)}${dim("sin temporada activa")}`);
+      continue;
+    }
+    const winRate = period.winRate === null ? "-" : `${Math.round(period.winRate * 100)}%`;
+    const rating =
+      period.ratingEvolution
+        .map((evolution) => {
+          const sign = evolution.change > 0 ? "+" : "";
+          return `${evolution.mode} ${evolution.from} -> ${evolution.to} (${sign}${evolution.change})`;
+        })
+        .join(", ") || "-";
+    console.log(
+      `     ${name.padEnd(20)}${String(period.matches).padEnd(7)}` +
+        `${`${period.wins}/${period.losses}/${period.draws}`.padEnd(11)}${winRate.padEnd(9)}` +
+        `${String(period.killDeathRatio ?? "-").padEnd(7)}${rating}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 15. Comportamiento irregular (Neo4j + MongoDB) — problema 7
+// ---------------------------------------------------------------------------
+
+async function detectIrregularBehavior() {
+  title("Comportamiento irregular  ->  Neo4j (pares) + MongoDB (reportes y nombres)  (problema 7)");
+  const params = new URLSearchParams({ days: await ask("Días hacia atrás", 30) });
+  info("Umbrales por defecto: 5 partidas entre el par, 100% de victorias, 3 denunciantes distintos en 60 minutos.");
+  if (await confirm("¿Cambiar los umbrales?", false)) {
+    params.set("minMatches", await ask("Mínimo de partidas entre los dos jugadores", 5));
+    params.set("minBenefitRatio", await ask("Proporción de victorias del beneficiario (0.5 a 1)", 1));
+    params.set("minReporters", await ask("Mínimo de denunciantes distintos", 3));
+    params.set("windowMinutes", await ask("Ventana de tiempo, en minutos", 60));
+  }
+
+  step("Una sola llamada corre las dos detecciones en paralelo y cruza los resultados.");
+  const result = await api("GET", `/fraud/irregular-behavior?${params}`);
+  if (!result) return;
+
+  step("Acuerdo de resultados: dos jugadores se enfrentan seguido y uno siempre gana.");
+  info("Neo4j: MATCH (a:Player)-[ra:PLAYED]->(m:Match)<-[rb:PLAYED]-(b:Player) WHERE a.id < b.id …");
+  printFixingGroups(result.matchFixing.groups);
+
+  step("Reportes convergentes: muchos denunciantes distintos sobre el mismo jugador en poco tiempo.");
+  info("MongoDB: reports.aggregate($match, $group por denunciado, $addToSet de denunciantes); la ventana la aplica la app.");
+  printReportAlerts(result.crossReports.alerts);
+
+  const names = new Map();
+  for (const group of result.matchFixing.groups) names.set(group.beneficiary.playerId, group.beneficiary.username);
+  for (const alert of result.crossReports.alerts) names.set(alert.reportedPlayerId, alert.username);
+  step("En las dos señales a la vez (la alerta más fuerte):");
+  if (result.playersInBoth.length === 0) info("Nadie.");
+  for (const playerId of result.playersInBoth) {
+    console.log(`     ${bold(red(names.get(playerId) ?? short(playerId)))} ${dim(`id=${short(playerId)}`)}`);
+  }
+  info("Es una alerta para revisar, no una sanción: sancionar es la opción 9 (problema 8).");
+}
+
+function printFixingGroups(groups) {
+  if (groups.length === 0) {
+    info("Ningún par cumple los umbrales.");
+    return;
+  }
+  for (const group of groups) {
+    console.log(`\n     ${bold(group.beneficiary.username ?? short(group.beneficiary.playerId))} gana siempre contra:`);
+    console.log(bold(`       ${"Rival".padEnd(24)}${"Partidas".padEnd(10)}${"Ganó".padEnd(7)}${"Perdió".padEnd(8)}% vict.`));
+    for (const partner of group.partners) {
+      console.log(
+        `       ${String(partner.username ?? short(partner.playerId)).padEnd(24)}${String(partner.matches).padEnd(10)}` +
+          `${String(partner.beneficiaryWins).padEnd(7)}${String(partner.partnerWins).padEnd(8)}` +
+          `${Math.round(partner.benefitRatio * 100)}%`,
+      );
+    }
+  }
+}
+
+function printReportAlerts(alerts) {
+  if (alerts.length === 0) {
+    info("Nadie supera el mínimo de denunciantes dentro de la ventana.");
+    return;
+  }
+  console.log();
+  console.log(bold(`     ${"Denunciado".padEnd(24)}${"Denunciantes".padEnd(14)}${"Desde (UTC)".padEnd(18)}Duración`));
+  for (const alert of alerts) {
+    const minutes = Math.round((new Date(alert.lastReportAt) - new Date(alert.firstReportAt)) / 60_000);
+    console.log(
+      `     ${String(alert.username ?? short(alert.reportedPlayerId)).padEnd(24)}` +
+        `${String(alert.distinctReporters).padEnd(14)}${formatDate(alert.firstReportAt).padEnd(18)}${minutes} min`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 8. Perfil completo (cuatro motores en paralelo) — problema 8
 // ---------------------------------------------------------------------------
 
@@ -1265,19 +1412,21 @@ async function resetAndSeed() {
 }
 
 const menu = [
-  ["Registrar jugador                      (MongoDB)", () => registerPlayer()],
-  ["Poner jugador en la cola               (MongoDB -> Redis)", () => enqueuePlayer()],
-  ["Formar partida                         (Redis + MongoDB)", () => formMatch()],
-  ["Registrar evento en una partida        (Cassandra + Redis a la vez)", () => recordEvent()],
-  ["Cerrar partida y aplicar rating        (Redis, Cassandra, MongoDB)", () => finishMatch()],
-  ["Ver leaderboard                        (Redis + MongoDB)", () => showLeaderboard()],
-  ["Proyectar historial y grafo            (MongoDB -> Cassandra y Neo4j)", () => projectClosedMatches()],
-  ["Perfil completo de un jugador          (MongoDB + Redis + Cassandra)", () => showProfile()],
-  ["Sancionar jugador y anular partidas    (MongoDB, Redis, Cassandra y Neo4j)", () => sanctionPlayer()],
-  ["Retomar una sanción incompleta         (resume desde el journal)", () => resumeIncompleteSanction()],
-  ["Recorrido guiado completo              (todo lo anterior, paso a paso)", () => guidedTour()],
+  ["Registrar jugador                          (MongoDB)", () => registerPlayer()],
+  ["Poner jugador en la cola (P1)              (MongoDB -> Redis)", () => enqueuePlayer()],
+  ["Formar partida (P2)                        (Redis + MongoDB)", () => formMatch()],
+  ["Registrar evento en una partida (P3)       (Cassandra + Redis a la vez)", () => recordEvent()],
+  ["Cerrar partida y aplicar rating (P4)       (Redis, Cassandra, MongoDB)", () => finishMatch()],
+  ["Ver leaderboard (P5)                       (Redis + MongoDB)", () => showLeaderboard()],
+  ["Proyectar historial y grafo                (MongoDB -> Cassandra y Neo4j)", () => projectClosedMatches()],
+  ["Perfil completo de un jugador (P8)         (MongoDB + Redis + Cassandra)", () => showProfile()],
+  ["Sancionar jugador y anular partidas (P8)   (MongoDB, Redis, Cassandra y Neo4j)", () => sanctionPlayer()],
+  ["Retomar una sanción incompleta (P8)        (resume desde el journal)", () => resumeIncompleteSanction()],
+  ["Recorrido guiado completo                  (todo lo anterior, paso a paso)", () => guidedTour()],
   ["Estado de los motores", () => engineStatus()],
-  ["Limpiar bases e inicializar datos      (los cuatro motores desde cero)", () => resetAndSeed()],
+  ["Limpiar bases e inicializar datos          (los cuatro motores desde cero)", () => resetAndSeed()],
+  ["Historial y estadísticas (P6)              (Cassandra + MongoDB)", () => showHistory()],
+  ["Detectar comportamiento irregular (P7)     (Neo4j + MongoDB)", () => detectIrregularBehavior()],
 ];
 
 async function main() {
